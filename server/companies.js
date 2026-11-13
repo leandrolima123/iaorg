@@ -11,7 +11,9 @@ export const uid = (prefix = '') => prefix + randomUUID().slice(0, 8);
 export const DEFAULT_MODEL = process.env.DEFAULT_CLAUDE_MODEL || 'claude-haiku-5-5';
 
 const ROLE_RANK = { member: 1, admin: 2, owner: 3 };
-export const hasRole = (member, role) => !!member && (ROLE_RANK[member.appRole] || 0) >= ROLE_RANK[role];
+export const isSubOf = (a, sub) => !!sub && (a.userSub === sub || (a.altSubs || []).includes(sub));
+export const subsOf = (a) => [a.userSub, ...(a.altSubs || [])].filter(Boolean);
+export const hasRole =(member, role) => !!member && (ROLE_RANK[member.appRole] || 0) >= ROLE_RANK[role];
 
 function freshState(id, name) {
   return {
@@ -64,9 +66,11 @@ export class CompanyStore {
 
   get company() { return this.state.company; }
   getAgent(id) { return this.state.agents.find((a) => a.id === id); }
-  memberBySub(sub) { return this.state.agents.find((a) => a.kind === 'human' && a.userSub === sub && a.active !== false); }
+  // Uma pessoa pode entrar com mais de um login (altSubs): ex.: o dono que criou empresas com e-mails diferentes.
+  memberBySub(sub) { return this.state.agents.find((a) => a.kind === 'human' && isSubOf(a, sub) && a.active !== false); }
   owner() { return this.state.agents.find((a) => a.kind === 'human' && a.appRole === 'owner' && a.active !== false); }
-  aiAgents() { return this.state.agents.filter((a) => a.kind !== 'human'); }
+  // agentes de IA: nem pessoas nem funções (automações do servidor, ver functions.js)
+  aiAgents() { return this.state.agents.filter((a) => a.kind !== 'human' && a.kind !== 'function'); }
 
   nextTaskId() {
     this.state.seq.task = (this.state.seq.task || 0) + 1;

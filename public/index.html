@@ -14,7 +14,7 @@
 <body class="app">
   <div class="shell">
     <nav class="rail" aria-label="Seções">
-      <div class="mark" id="brandMark" title="IAORG">IA</div>
+      <a class="mark" id="brandMark" href="/empresas.html" title="IAORG">IA</a>
       <button class="tab active" data-tab="office"><svg class="i"><use href="/vendor/lucide/sprite.svg#hard-hat"/></svg>Obra</button>
       <button class="tab" data-tab="desk"><svg class="i"><use href="/vendor/lucide/sprite.svg#inbox"/></svg>Minha mesa<span id="deskCount" class="count hidden">0</span></button>
       <button class="tab" data-tab="tasks"><svg class="i"><use href="/vendor/lucide/sprite.svg#list-checks"/></svg>Tarefas</button>
@@ -23,10 +23,12 @@
       <button class="tab" data-tab="activity"><svg class="i"><use href="/vendor/lucide/sprite.svg#activity"/></svg>Atividade</button>
       <button class="tab" data-tab="files"><svg class="i"><use href="/vendor/lucide/sprite.svg#folder-open"/></svg>Arquivos</button>
       <button class="tab" data-tab="dashboard"><svg class="i"><use href="/vendor/lucide/sprite.svg#chart-column"/></svg>Painel</button>
+      <button class="tab hidden" data-tab="trading" id="tradingTab"><svg class="i"><use href="/vendor/lucide/sprite.svg#chart-candlestick"/></svg>Operações</button>
       <button class="tab" data-tab="team"><svg class="i"><use href="/vendor/lucide/sprite.svg#users"/></svg>Equipe</button>
       <button class="tab" data-tab="brand"><svg class="i"><use href="/vendor/lucide/sprite.svg#palette"/></svg>Marca</button>
       <button class="tab" data-tab="integrations"><svg class="i"><use href="/vendor/lucide/sprite.svg#plug"/></svg>Integrações</button>
       <div class="rail-foot">
+        <a class="tab" href="/empresas.html" id="companiesTab" title="Trocar de empresa ou criar outra"><svg class="i"><use href="/vendor/lucide/sprite.svg#building"/></svg>Empresas</a>
         <button class="tab" data-tab="settings"><svg class="i"><use href="/vendor/lucide/sprite.svg#settings"/></svg>Ajustes</button>
         <a class="tab" href="/auth/logout"><svg class="i"><use href="/vendor/lucide/sprite.svg#log-out"/></svg>Sair</a>
         <div class="me-chip" id="meChip" title=""></div>
@@ -47,6 +49,7 @@
     <section id="panel-activity" class="panel hidden" aria-label="Atividade dos agentes"></section>
     <section id="panel-files" class="panel hidden" aria-label="Arquivos"></section>
     <section id="panel-dashboard" class="panel hidden" aria-label="Painel"></section>
+    <section id="panel-trading" class="panel hidden" aria-label="Operações da mesa de trading"></section>
     <section id="panel-team" class="panel hidden" aria-label="Equipe"></section>
     <section id="panel-brand" class="panel hidden" aria-label="Marca"></section>
     <section id="panel-integrations" class="panel hidden" aria-label="Integrações"></section>

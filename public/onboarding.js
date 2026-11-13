@@ -19,8 +19,11 @@ let current = 'company';
 
 async function load() {
   me = await api('GET', '/api/me');
+  if (me.needsChoice) { location.replace('/empresas.html'); return false; }
   catalog = catalog || await api('GET', '/api/catalog');
   $('#who').textContent = me.user.email || me.user.name;
+  // quem já tem empresas pode desistir da nova e voltar (as outras seguem rodando)
+  if (me.companies?.length && !$('#backToCompanies')) $('#who').insertAdjacentHTML('afterend', ` <a class="btn small ghost" id="backToCompanies" href="/empresas.html">Minhas empresas</a>`);
   if (me.company) {
     S = await api('GET', '/api/state');
     if (!['owner', 'admin'].includes(me.member.appRole) && !(editMode && params.get('step') === 'you')) { location.href = '/'; return false; }
@@ -204,7 +207,7 @@ let candidates = null;
 let templateId = 'software-house';
 
 function buildCandidates() {
-  const ai = S.agents.filter((a) => a.kind !== 'human');
+  const ai = S.agents.filter((a) => a.kind === 'ai'); // funções (automações) não entram aqui: o servidor as mantém
   if (ai.length) return ai.map((a) => ({ ...a, hire: true }));
   const t = catalog.templates.find((x) => x.id === templateId);
   const owner = myself();
@@ -218,7 +221,7 @@ function team() {
   if (!candidates) candidates = buildCandidates();
   const root = $('#step');
   const people = S.agents.filter((a) => a.kind === 'human');
-  const hasTeam = S.agents.some((a) => a.kind !== 'human');
+  const hasTeam = S.agents.some((a) => a.kind === 'ai');
   const bossOptions = (sel, selfId) => [
     ...people.map((p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)} (${esc(p.role)}, pessoa)</option>`),
     ...candidates.filter((c) => c.id !== selfId).map((c) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)} (${esc(c.role)})</option>`),
@@ -301,7 +304,7 @@ function team() {
 function review() {
   const c = S.company;
   const root = $('#step');
-  const ai = S.agents.filter((a) => a.kind !== 'human');
+  const ai = S.agents.filter((a) => a.kind === 'ai');
   const people = S.agents.filter((a) => a.kind === 'human');
   root.innerHTML = `
     <h1>Tudo pronto para abrir a obra?</h1>

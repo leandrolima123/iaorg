@@ -156,7 +156,7 @@ export async function callMock({ agent, ctx, iteration }) {
   const task = ctx.myTasks.find((t) => t.status === 'todo');
   if (task) {
     calls.push(tu('update_task', { task_id: task.id, status: 'doing' }));
-    const aiReports = reports.filter((r) => r.kind !== 'human');
+    const aiReports = reports.filter((r) => r.kind !== 'human' && r.kind !== 'function');
     if (aiReports.length && !task.parentId) {
       for (const r of aiReports) {
         calls.push(tu('create_task', {

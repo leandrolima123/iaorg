@@ -13,10 +13,17 @@ export const CHARACTERS = [
   { key: 'rogue', label: 'Ladino', file: 'Rogue.glb' },
   { key: 'rogue_hooded', label: 'Ladino encapuzado', file: 'Rogue_Hooded.glb' },
   { key: 'ranger', label: 'Patrulheiro', file: 'Ranger.glb' },
+  // KayKit Skeletons 1.0 (CC0), mesmo esqueleto: "extra" = fora do sorteio da aparência padrão,
+  // para não mudar o visual de quem nunca escolheu um personagem.
+  { key: 'skeleton_warrior', label: 'Esqueleto guerreiro', file: 'Skeleton_Warrior.glb', extra: true },
+  { key: 'skeleton_rogue', label: 'Esqueleto ladino', file: 'Skeleton_Rogue.glb', extra: true },
+  { key: 'skeleton_mage', label: 'Esqueleto mago', file: 'Skeleton_Mage.glb', extra: true },
+  { key: 'skeleton_minion', label: 'Esqueleto lacaio', file: 'Skeleton_Minion.glb', extra: true },
 ];
 // Peças opcionais (acessórios) pelo sufixo do nome da malha.
-export const PART_LABEL = { Helmet: 'Capacete', HelmetVisor: 'Viseira', Cape: 'Capa', Hat: 'Chapéu', BearHat: 'Chapéu de urso', Quiver: 'Aljava', Mask: 'Máscara' };
-const CORE = new Set(['Head', 'Body', 'ArmLeft', 'ArmRight', 'LegLeft', 'LegRight']);
+export const PART_LABEL = { Helmet: 'Capacete', HelmetVisor: 'Viseira', Cape: 'Capa', Hat: 'Chapéu', BearHat: 'Chapéu de urso', Quiver: 'Aljava', Mask: 'Máscara', Cloak: 'Manto', Hood: 'Capuz' };
+// partes do corpo (sempre visíveis): as dos esqueletos incluem olhos, mandíbula e crânio
+const CORE = new Set(['Head', 'Body', 'ArmLeft', 'ArmRight', 'LegLeft', 'LegRight', 'Eyes', 'Jaw', 'Skull']);
 // Visual de escritório por padrão: sem viseira fechada nem máscara cobrindo o rosto.
 const DEFAULT_OFF = new Set(['HelmetVisor', 'Mask', 'Quiver']);
 export const ITEMS = [
@@ -62,7 +69,8 @@ export const charKey = (k) => (CHARACTERS.some((c) => c.key === k) ? k : null);
 /** Aparência padrão (determinística por id) quando o agente ainda não escolheu. */
 export function defaultLook(id) {
   let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return { char: CHARACTERS[h % CHARACTERS.length].key, parts: {}, outfit: 'agent', item: '', scale: 1 };
+  const pool = CHARACTERS.filter((c) => !c.extra);
+  return { char: pool[h % pool.length].key, parts: {}, outfit: 'agent', item: '', scale: 1 };
 }
 export function normalizeLook(look, id) {
   const d = defaultLook(id);
@@ -160,7 +168,7 @@ export async function buildCharacter(lookIn, id, color) {
     if (!CORE.has(suffix)) o.visible = look.parts[suffix] ?? !DEFAULT_OFF.has(suffix);
     o.material = o.material.clone();
     // roupa: corpo, capa e chapéu ganham um toque da cor escolhida (rosto e mãos ficam naturais)
-    if (tint && ['Body', 'Cape', 'Hat', 'BearHat', 'Helmet'].includes(suffix)) o.material.color.copy(new THREE.Color('#ffffff').lerp(tint, 0.55));
+    if (tint && ['Body', 'Cape', 'Hat', 'BearHat', 'Helmet', 'Cloak', 'Hood'].includes(suffix)) o.material.color.copy(new THREE.Color('#ffffff').lerp(tint, 0.55));
   });
   const root = new THREE.Group();
   root.add(model);

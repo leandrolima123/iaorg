@@ -35,10 +35,18 @@ function zoned(y, m, d, h, mi, tz = TZ) {
 export function nextRun(schedule, from = Date.now()) {
   const [hh, mm] = String(schedule?.time || '09:00').split(':').map((n) => +n || 0);
   const start = partsIn(from);
-  for (let i = 0; i < 400; i++) {
+  // começa no dia anterior: no intervalo, as horas da madrugada vêm da âncora de ontem (ex.: 08:00 + 20 h = 04:00)
+  for (let i = schedule?.freq === 'interval' ? -1 : 0; i < 400; i++) {
     const base = new Date(Date.UTC(start.y, start.m - 1, start.d + i));
     const y = base.getUTCFullYear(), m = base.getUTCMonth() + 1, d = base.getUTCDate(), dow = base.getUTCDay();
     const f = schedule?.freq || 'daily';
+    if (f === 'interval') {
+      // a cada N horas, recomeçando todo dia no horário escolhido (ex.: 08:00 de 4 em 4 h → 08, 12, 16, 20, 00, 04)
+      const n = Math.min(12, Math.max(1, +schedule.everyHours || 4));
+      const at0 = zoned(y, m, d, hh, mm);
+      for (let k = 0; k * n < 24; k++) { const at = at0 + k * n * 3600_000; if (at > from) return at; }
+      continue;
+    }
     const okDay = f === 'daily' || (f === 'weekdays' && dow >= 1 && dow <= 5)
       || (f === 'weekly' && (schedule.days || []).includes(dow))
       || (f === 'monthly' && d === Math.min(+schedule.dayOfMonth || 1, new Date(Date.UTC(y, m, 0)).getUTCDate()));
@@ -51,6 +59,7 @@ export function nextRun(schedule, from = Date.now()) {
 
 export function describeSchedule(s) {
   const t = s?.time || '09:00';
+  if (s?.freq === 'interval') return `A cada ${s.everyHours || 4} h, a partir das ${t}`;
   if (s?.freq === 'weekdays') return `Dias úteis às ${t}`;
   if (s?.freq === 'weekly') return `${(s.days || []).sort().map((d) => DOW[d]).join(', ') || '(nenhum dia)'} às ${t}`;
   if (s?.freq === 'monthly') return `Todo dia ${s.dayOfMonth || 1} do mês às ${t}`;
@@ -72,17 +81,18 @@ function saveRunDetail(store, run, detail) {
 
 const S = (v, n) => String(v ?? '').trim().slice(0, n);
 export function sanitizeRoutine(body, store, prev = {}) {
-  const ids = new Set(store.state.agents.filter((a) => a.active !== false).map((a) => a.id));
+  const ids = new Set(store.state.agents.filter((a) => a.active !== false && a.kind !== 'function').map((a) => a.id));
   const sch = body.schedule || prev.schedule || {};
   const r = {
     ...prev,
     name: S(body.name ?? prev.name, 80) || 'Rotina',
-    kind: ['task', 'meeting'].includes(body.kind) ? body.kind : prev.kind || 'task',
+    kind: ['task', 'meeting', 'message'].includes(body.kind) ? body.kind : prev.kind || 'task',
     enabled: body.enabled !== undefined ? !!body.enabled : prev.enabled ?? true,
     instructions: S(body.instructions ?? prev.instructions, 8000),
     folder: S(body.folder ?? prev.folder, 120).replace(/^\/+|\/+$/g, '').replace(/[\\:*?"<>|]/g, ''),
     schedule: {
-      freq: ['daily', 'weekdays', 'weekly', 'monthly'].includes(sch.freq) ? sch.freq : 'daily',
+      freq: ['daily', 'weekdays', 'weekly', 'monthly', 'interval'].includes(sch.freq) ? sch.freq : 'daily',
+      everyHours: Math.min(12, Math.max(1, Math.round(+sch.everyHours || 4))),
       days: (Array.isArray(sch.days) ? sch.days : []).map(Number).filter((d) => d >= 0 && d <= 6),
       dayOfMonth: Math.min(31, Math.max(1, +sch.dayOfMonth || 1)),
       time: /^\d{1,2}:\d{2}$/.test(sch.time || '') ? sch.time.padStart(5, '0') : '09:00',
@@ -93,7 +103,8 @@ export function sanitizeRoutine(body, store, prev = {}) {
     createTasks: body.createTasks !== undefined ? !!body.createTasks : prev.createTasks ?? true,
     template: S(body.template ?? prev.template, 40),
   };
-  if (r.kind === 'task' && !r.assigneeId) throw new Error('Escolha quem executa a rotina.');
+  if (r.kind !== 'meeting' && !r.assigneeId) throw new Error('Escolha quem executa a rotina.');
+  if (r.kind === 'message' && !r.instructions) throw new Error('Escreva a mensagem que o agente vai receber.');
   if (r.kind === 'meeting') {
     if (!r.participants.length) throw new Error('Escolha os participantes da reunião.');
     const ai = r.participants.filter((id) => store.getAgent(id)?.kind !== 'human');
@@ -236,6 +247,7 @@ export async function runRoutine(rt, r, { scheduledFor, manual = false, by } = {
   rt.emit({ type: 'routines' });
   try {
     if (r.kind === 'task') await runTask(rt, r, run);
+    else if (r.kind === 'message') runMessage(rt, r, run);
     else await runMeeting(rt, r, run);
   } catch (e) {
     Object.assign(run, { status: 'failed', error: describeError(e), endedAt: Date.now() });
@@ -263,6 +275,17 @@ async function runTask(rt, r, run) {
   });
   task.routineRunId = run.id;
   Object.assign(run, { taskId: task.id, agentId: agent.id, status: 'running' });
+}
+
+// Tipo aviso: uma mensagem curta ao agente, que responde no ciclo rápido (sem oficina). Para o que é
+// frequente e cabe em poucas ferramentas (ex.: varredura da mesa a cada 4 h): bem mais barato que uma tarefa.
+function runMessage(rt, r, run) {
+  const store = rt.store;
+  const agent = store.getAgent(r.assigneeId);
+  if (!agent) throw new Error('O destinatário não existe mais.');
+  const from = store.getAgent(r.createdBy) ? r.createdBy : store.owner()?.id || 'board';
+  rt.postMessage(from, agent.id, `[Rotina "${r.name}"] ${r.instructions}`);
+  Object.assign(run, { agentId: agent.id, status: 'done', endedAt: Date.now(), summary: r.instructions.slice(0, 1200) });
 }
 
 /** Atualiza execuções do tipo tarefa conforme a tarefa anda. */

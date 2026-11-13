@@ -24,7 +24,8 @@ export async function renderIntegrations(root, ctx) {
   const withAccess = new Set(data.connected.flatMap((c) => (c.agents || []).filter((a) => a.perms?.length).map((a) => a.id)));
   // Conectada mas ainda falta escolher o que liberar (repositórios, projetos, conta de anúncios).
   const pending = (c, conn) => (c.type === 'github' && !(conn.config.repos || []).length) || (c.type === 'railway' && !(conn.config.projects || []).length)
-    || (c.type === 'google_ads' && !conn.config?.customerId) || (c.type === 'resend' && !(conn.config.inboxes || []).length);
+    || (c.type === 'google_ads' && !conn.config?.customerId) || (c.type === 'resend' && !(conn.config.inboxes || []).length)
+    || (c.type === 'binance' && ['pairs', 'maxOrderUsdt', 'maxRiskUsdt', 'maxDailyLossUsdt', 'maxPositions'].some((k) => !String(conn.config?.[k] ?? '').trim()));
 
   function draw() {
     const on = available.filter((c) => connected[c.type] && inCat(c));
@@ -128,12 +129,71 @@ export async function renderIntegrations(root, ctx) {
       : `<label class="field"><span>${esc(c.tokenLabel)}</span><input name="token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" placeholder="${esc(c.tokenPlaceholder)}" required></label>`;
     return `<form class="integ-form" data-connect autocomplete="off">
       ${tokenInputs}
-      ${(c.configFields || []).map((f) => f.options
+      ${(c.configFields || []).map((f) => c.type === 'binance' && f.key === 'pairs'
+        ? pairPicker('', 'testnet')
+        : f.options
         ? `<label class="field"><span>${esc(f.label)}</span><select name="${f.key}">${f.options.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')}</select></label>`
         : `<label class="field"><span>${esc(f.label)}</span><input name="${f.key}" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" placeholder="${esc(f.placeholder || '')}"></label>`).join('')}
       ${c.tokenHelp ? `<p class="hint">${esc(c.tokenHelp)}${c.tokenUrl ? ` <a href="${esc(c.tokenUrl)}" target="_blank" rel="noopener">Abrir</a>` : ''}</p>` : ''}
       ${c.auth === 'google' ? '' : `<div><button class="btn primary">${ic('plug', 'sm')}Conectar ${esc(c.name)}</button></div>`}
     </form>`;
+  }
+
+  // Seletor de pares da Binance: checkbox com busca, lista vinda da própria Binance (pares em USDT por volume).
+  function pairPicker(value, env, disabled = false) {
+    return `<div class="field pair-picker" data-pair-picker data-env="${esc(env)}" ${disabled ? 'data-disabled' : ''}>
+      <span>Pares permitidos</span>
+      <input type="hidden" name="pairs" value="${esc(value)}">
+      <div class="pair-chosen" data-chosen></div>
+      ${disabled ? '' : `<input type="search" data-pair-q placeholder="Buscar par (ex.: SOL, PEPE)" aria-label="Buscar par" autocomplete="off" data-1p-ignore data-lpignore="true">
+      <div class="pair-list" data-pair-list role="group" aria-label="Pares disponíveis"><p class="hint">Carregando pares da Binance…</p></div>`}
+    </div>`;
+  }
+
+  const pairsByEnv = {};
+  function bindPairPicker(box) {
+    const hidden = $('input[name=pairs]', box);
+    const chosen = () => hidden.value.split(/[\s,]+/).filter(Boolean);
+    const setChosen = (list) => { hidden.value = [...new Set(list)].join(', '); paintChosen(); paintList(); };
+    const fmt = (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)} bi` : v >= 1e6 ? `${(v / 1e6).toFixed(1)} mi` : v >= 1e3 ? `${Math.round(v / 1e3)} mil` : String(v)).replace('.', ',');
+    function paintChosen() {
+      const list = chosen();
+      $('[data-chosen]', box).innerHTML = list.length
+        ? list.map((s) => `<span class="chip on">${esc(s)}${box.hasAttribute('data-disabled') ? '' : `<button type="button" data-unpick="${esc(s)}" aria-label="Remover ${esc(s)}">×</button>`}</span>`).join('')
+        : '<span class="hint">Nenhum par escolhido.</span>';
+      $$('[data-unpick]', box).forEach((b) => b.onclick = () => setChosen(chosen().filter((x) => x !== b.dataset.unpick)));
+    }
+    function paintList() {
+      const listEl = $('[data-pair-list]', box);
+      if (!listEl) return;
+      const all = pairsByEnv[box.dataset.env];
+      if (!all) return;
+      if (all.error) { listEl.innerHTML = `<p class="error">${esc(all.error)}</p>`; return; }
+      const q = ($('[data-pair-q]', box).value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const sel = new Set(chosen());
+      const rows = q ? all.filter((p) => p.symbol.includes(q)).slice(0, 60) : all.slice(0, 30);
+      listEl.innerHTML = rows.map((p) => `<label class="pair"><input type="checkbox" value="${esc(p.symbol)}" ${sel.has(p.symbol) ? 'checked' : ''}>
+        <b>${esc(p.base)}</b><small>/USDT</small><span class="num">${fmt(p.volumeUsdt)} USDT/24h</span></label>`).join('')
+        || `<p class="hint">Nenhum par em USDT com "${esc(q)}".</p>`;
+      if (!q) listEl.insertAdjacentHTML('beforeend', `<p class="hint">Mostrando os 30 de maior volume. Busque para ver os outros ${all.length - 30}.</p>`);
+      $$('input[type=checkbox]', listEl).forEach((i) => i.onchange = () => setChosen(i.checked ? [...chosen(), i.value] : chosen().filter((x) => x !== i.value)));
+    }
+    async function load() {
+      const env = box.dataset.env;
+      if (!pairsByEnv[env]) {
+        try { pairsByEnv[env] = (await api('GET', `/api/integrations/binance/pairs?env=${encodeURIComponent(env)}`)).pairs; }
+        catch (err) { pairsByEnv[env] = { error: err.message }; }
+      }
+      // ao trocar de ambiente, só ficam os pares que existem nele
+      if (Array.isArray(pairsByEnv[env])) { const ok = new Set(pairsByEnv[env].map((p) => p.symbol)); const keep = chosen().filter((s) => ok.has(s)); if (keep.length !== chosen().length) hidden.value = keep.join(', '); }
+      paintChosen(); paintList();
+    }
+    $('[data-pair-q]', box)?.addEventListener('input', paintList);
+    // no formulário de conexão, o ambiente escolhido decide de onde vem a lista
+    const envSel = box.closest('form')?.querySelector('select[name=env]');
+    if (envSel && !box.closest('[data-desk-config]')) { box.dataset.env = envSel.value; envSel.addEventListener('change', () => { box.dataset.env = envSel.value; load(); }); }
+    paintChosen();
+    if ($('[data-pair-list]', box)) load();
   }
 
   function configBlock(c, conn) {
@@ -171,6 +231,32 @@ export async function renderIntegrations(root, ctx) {
         ${isAdmin ? `<div class="row" style="gap:8px;flex-wrap:wrap">${cfg.customerId ? `<button type="button" class="btn small" data-ads-preview>${ic('chart-column', 'sm')}Ver campanhas (7 dias)</button>` : ''}<button type="button" class="btn small" data-pick-ads>${cfg.customerId ? 'Trocar conta' : 'Escolher conta'}</button></div>
           <div class="ads-preview hidden" data-ads-preview-box></div><div class="repo-list hidden" data-ads-list></div>` : ''}</div>`;
     }
+    if (c.type === 'binance') {
+      const cfg = conn.config || {};
+      const prod = cfg.env === 'prod';
+      const field = (k, label, ph) => `<label class="field"><span>${label}</span><input name="${k}" value="${esc(cfg[k] ?? '')}" placeholder="${ph}" inputmode="decimal" ${isAdmin ? '' : 'disabled'}></label>`;
+      return `<div class="integ-config desk">
+        <div class="desk-top">
+          <span class="badge ${prod ? 'err' : 'todo'}">${ic(prod ? 'zap' : 'flask-conical', 'sm')}${prod ? 'PRODUÇÃO · dinheiro real' : 'Testnet · dinheiro de teste'}</span>
+          <span class="badge ${cfg.halted ? 'err' : 'live'}">${ic(cfg.halted ? 'octagon-pause' : 'check', 'sm')}${cfg.halted ? 'Mesa PARADA' : 'Mesa liberada'}</span>
+          ${isAdmin ? `<button type="button" class="btn small ${cfg.halted ? 'primary' : 'danger'}" data-desk-halt="${cfg.halted ? '0' : '1'}">${ic(cfg.halted ? 'play' : 'octagon-pause', 'sm')}${cfg.halted ? 'Liberar a mesa' : 'Parar a mesa'}</button>` : ''}
+        </div>
+        <p class="hint">Parar a mesa bloqueia na hora qualquer compra nova dos agentes. Fechar posições continua permitido, porque reduz o risco.${prod ? ' Em produção a mesa começa parada: confira os limites e libere.' : ''}</p>
+        <div class="desk-status" data-desk-status><p class="hint">Carregando a situação da mesa…</p></div>
+        <form class="integ-form" data-desk-config>
+          <h4>Limites da mesa (conferidos no código, em toda ordem)</h4>
+          <div class="desk-grid">
+            ${pairPicker(cfg.pairs || '', cfg.env || 'testnet', !isAdmin)}
+            ${field('maxOrderUsdt', 'Máximo por ordem (USDT)', 'Ex.: 50')}
+            ${field('maxRiskUsdt', 'Risco máximo por operação (USDT)', 'Ex.: 2')}
+            ${field('maxDailyLossUsdt', 'Perda máxima no dia (USDT)', 'Ex.: 10')}
+            ${field('maxPositions', 'Máximo de posições abertas', 'Ex.: 2')}
+            <label class="field"><span>Execução</span><select name="mode" ${isAdmin ? '' : 'disabled'}><option value="approval" ${cfg.mode !== 'auto' ? 'selected' : ''}>Cada ordem passa pela minha aprovação</option><option value="auto" ${cfg.mode === 'auto' ? 'selected' : ''}>Automática dentro dos limites</option></select></label>
+          </div>
+          <p class="hint">Risco por operação = quanto se perde se o stop for atingido (valor × distância até o stop). Perda no dia = queda do patrimônio da mesa desde a primeira leitura do dia; ao atingir, novas compras param até o dia seguinte.</p>
+          ${isAdmin ? '<div><button class="btn small primary">Salvar limites</button></div>' : ''}
+        </form></div>`;
+    }
     if (c.type === 'resend') {
       return `<form class="integ-config integ-form" data-resend-config>
         <label class="field"><span>Remetente das respostas</span><input name="from" value="${esc(conn.config.from || '')}" placeholder="Suporte <suporte@seudominio.com>" ${isAdmin ? '' : 'disabled'}></label>
@@ -206,6 +292,37 @@ export async function renderIntegrations(root, ctx) {
     try { const r = await api('POST', `/api/integrations/${type}/connect`, { token, config }); await after(`Conectado${r.account ? ` (${r.account})` : ''}`); }
     catch (err) { toast(err.message, 'err'); btn.disabled = false; }
   }));
+
+  // ---------- mesa de trading (Binance) ----------
+  $$('[data-pair-picker]', root).forEach(bindPairPicker);
+  $$('[data-desk-config]', root).forEach((form) => form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!$('input[name=pairs]', form).value.trim()) { toast('Escolha pelo menos um par', 'err'); return; }
+    try { await api('PUT', '/api/integrations/binance/config', Object.fromEntries(new FormData(form))); await after('Limites da mesa salvos'); } catch (err) { toast(err.message, 'err'); }
+  }));
+  $$('[data-desk-halt]', root).forEach((b) => b.addEventListener('click', async () => {
+    const halt = b.dataset.deskHalt === '1';
+    if (!halt && !confirm('Liberar a mesa? Os agentes voltam a poder comprar dentro dos limites.')) return;
+    try { await api('POST', '/api/integrations/binance/halt', { halted: halt }); await after(halt ? 'Mesa parada: nenhuma compra nova' : 'Mesa liberada'); } catch (err) { toast(err.message, 'err'); }
+  }));
+  $$('[data-desk-status]', root).forEach(async (box) => {
+    try {
+      const s = await api('GET', '/api/integrations/binance/status');
+      const n = (v, d = 2) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }));
+      const ST = { pendente: 'aguardando Risco', aprovada: 'aprovada', recusada: 'recusada', executada: 'executada', expirada: 'expirada', aguardando_dono: 'aguardando você', falhou: 'falhou', recusada_na_execucao: 'barrada na execução' };
+      box.innerHTML = `${s.error ? `<p class="error">${esc(s.error)}</p>` : `
+        <div class="desk-kpis">
+          <div><span>Patrimônio da mesa</span><b class="num">${n(s.equity)} USDT</b></div>
+          <div><span>Resultado do dia</span><b class="num ${s.pnlDay < 0 ? 'neg' : s.pnlDay > 0 ? 'pos' : ''}">${s.pnlDay > 0 ? '+' : ''}${n(s.pnlDay)} USDT</b></div>
+          <div><span>USDT livre</span><b class="num">${n(s.usdtFree)}</b></div>
+          <div><span>Posições</span><b class="num">${(s.positions || []).length}${s.config.maxPositions ? ` / ${s.config.maxPositions}` : ''}</b></div>
+        </div>
+        ${(s.positions || []).length ? `<p class="hint">${s.positions.map((p) => `${esc(p.par)}: ${p.quantidade_da_mesa} (${n(p.valor_usdt)} USDT)`).join(' · ')}</p>` : ''}`}
+        ${s.missing?.length ? `<p class="error">Faltam limites: ${esc(s.missing.join(', '))}. Sem eles, os agentes não propõem nem executam.</p>` : ''}
+        ${(s.proposals || []).length ? `<table class="access-table"><thead><tr><th>Proposta</th><th>Par</th><th>Valor</th><th>Risco</th><th>Situação</th></tr></thead><tbody>
+          ${s.proposals.map((p) => `<tr><td><code>${esc(p.id)}</code><small>${new Date(p.ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></td><td>${esc(p.par)}</td><td class="num">${n(p.valor)}</td><td class="num">${n(p.risco)}</td><td>${esc(ST[p.status] || p.status)}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhuma proposta ainda.</p>'}`;
+    } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+  });
 
   $$('[data-resend-config]', root).forEach((form) => form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -337,7 +454,7 @@ export async function renderIntegrations(root, ctx) {
 }
 
 // Resumo de acessos de um agente (para o editor da equipe).
-export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp' };
+export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance' };
 export function accessChips(agent, integrations, catalogNames = INTEGRATION_NAMES) {
   const list = Object.entries(agent.access || {}).filter(([t]) => integrations?.some((i) => i.type === t));
   return list.length ? list.map(([t, a]) => `<span class="badge">${esc(catalogNames[t] || t)} · ${a.perms.length} permiss${a.perms.length > 1 ? 'ões' : 'ão'}</span>`).join(' ') : '<span class="hint">Nenhum acesso a sistemas externos.</span>';

@@ -5,14 +5,15 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { DATA_DIR, randomToken } from './secrets.js';
-import { createCompany, allCompanies, getCompany, hasRole, uid } from './companies.js';
-import { mountAuth, requireUser, requireCompany, sessionFromRequest, resolveCompany, updateSession } from './auth.js';
+import { createCompany, allCompanies, getCompany, hasRole, uid, isSubOf, subsOf } from './companies.js';
+import { mountAuth, requireUser, requireCompany, sessionFromRequest, resolveCompany, updateSession, userCompanies } from './auth.js';
 import * as kc from './keycloak-admin.js';
 import { mountIntegrations, startInboxPoller } from './integrations.js';
 import { mountAgentConfig } from './agent-config.js';
 import { mountWorkbench, cancelJob } from './workbench.js';
 import { mountFiles } from './files.js';
 import { mountRoutines } from './routines.js';
+import { mountFunctions } from './functions.js';
 import { mountMcp } from './mcp.js';
 import { mountDashboard, backfillLedger } from './dashboard.js';
 import { mountBrand } from './brand.js';
@@ -61,15 +62,64 @@ const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const refresh = (store) => runtimeFor(store).pushSnapshot();
 
 // ---------------- sessão / onboarding ----------------
+// Resumo de uma empresa para o seletor: o que está rodando agora (as empresas rodam todas ao mesmo tempo).
+function companyCard(store, sub) {
+  const m = store.memberBySub(sub);
+  const run = runtimeFor(store);
+  const ais = store.aiAgents().filter((a) => a.active !== false);
+  const busy = ais.filter((a) => ['thinking', 'working', 'meeting', 'presenting'].includes(run.agentRuntime(a.id).status)).length;
+  const u = run.usagePayload();
+  return {
+    id: store.id, name: store.company.name, segment: store.company.segment || '', logo: !!store.company.logo, logoVersion: store.company.logoVersion || 0,
+    onboardingStep: store.company.onboardingStep, appRole: m?.appRole, role: m?.role,
+    agents: ais.length, people: store.state.agents.filter((a) => a.kind === 'human').length, working: busy,
+    openTasks: (store.state.tasks || []).filter((t) => ['todo', 'doing', 'review', 'approval'].includes(t.status)).length,
+    approvals: (store.state.approvals || []).filter((a) => a.status === 'pending').length,
+    paused: !!store.state.paused, monthCostUsd: +(u.monthCostUsd || 0).toFixed(2), simulated: !store.getSecret('claudeKey'),
+  };
+}
+
 app.get('/api/me', requireUser, wrap(async (req, res) => {
   const store = await resolveCompany(req.session);
   const member = store?.memberBySub(req.session.sub);
+  const mine = req.session.viaToken ? [] : userCompanies(req.session);
   res.json({
     user: { name: req.session.name, email: req.session.email },
     company: store && member ? { id: store.id, name: store.company.name, onboardingStep: store.company.onboardingStep, logo: !!store.company.logo } : null,
     member: member ? { id: member.id, appRole: member.appRole } : null,
+    companies: mine.map((s) => ({ id: s.id, name: s.company.name })),
+    needsChoice: !store && mine.length > 1 && !req.session.newCompany,
+    creating: !!req.session.newCompany,
   });
 }));
+
+// ---------------- várias empresas por pessoa ----------------
+app.get('/api/companies', requireUser, (req, res) => {
+  const current = req.session.newCompany ? null : req.session.companyId;
+  res.json({ current, companies: userCompanies(req.session).map((s) => companyCard(s, req.session.sub)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')) });
+});
+app.post('/api/companies/select', requireUser, (req, res) => {
+  if (req.session.viaToken) return bad(res, 'Tokens valem para uma empresa só', 403);
+  const store = getCompany(str(req.body?.id, 80));
+  if (!store || !store.memberBySub(req.session.sub)) return bad(res, 'Empresa não encontrada', 404);
+  updateSession(req.session.sid, { companyId: store.id, newCompany: false });
+  res.json({ ok: true, onboardingStep: store.company.onboardingStep });
+});
+// Começa a criar outra empresa: o onboarding abre em branco; as outras empresas continuam rodando.
+app.post('/api/companies/new', requireUser, (req, res) => {
+  if (req.session.viaToken) return bad(res, 'Use o navegador para criar empresas', 403);
+  updateSession(req.session.sid, { newCompany: true });
+  res.json({ ok: true });
+});
+app.get('/api/companies/:id/logo', requireUser, (req, res) => {
+  const store = getCompany(req.params.id);
+  if (!store || !store.memberBySub(req.session.sub)) return res.status(404).end();
+  const file = store.logoFile();
+  if (!file || !fs.existsSync(file)) return res.status(404).end();
+  const kind = IMAGE_TYPES.find((t) => file.endsWith('.' + t.ext));
+  res.set({ 'Content-Type': kind.mime, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+  res.send(fs.readFileSync(file));
+});
 
 const companyFields = (b) => ({
   name: str(b.name, 60), segment: str(b.segment, 80), website: str(b.website, 200),
@@ -98,7 +148,8 @@ app.post('/api/onboarding/company', requireUser, wrap(async (req, res) => {
   });
   migrateLegacy(store);
   store.save();
-  updateSession(req.session.sid, { companyId: store.id });
+  updateSession(req.session.sid, { companyId: store.id, newCompany: false });
+  runtimeFor(store); // já entra no agendador, junto com as outras empresas
   res.json({ id: store.id });
 }));
 
@@ -204,6 +255,8 @@ mountIntegrations(app, { requireCompany, need, wrap, runtimeFor, getCompany });
 mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor });
 // Oficina: tarefas em containers (runner), eventos ao vivo, ajuste e cancelamento
 mountWorkbench(app, { requireCompany, need, wrap, runtimeFor });
+// Funções: membros automáticos (sem IA) com configuração própria — ex.: vigia da mesa
+mountFunctions(app, { requireCompany, need, wrap, runtimeFor, refresh });
 
 // ---------------- equipe ----------------
 // Aparência do personagem 3D (escritório): personagem, acessórios, cor da roupa, objeto na mão e tamanho.
@@ -255,7 +308,8 @@ app.post('/api/team/apply', requireCompany, need('admin'), (req, res) => {
     else if (target && humans.some((x) => x.id === target)) a.reportsTo = target;
     else a.reportsTo = owner?.id || null; // sem chefe na lista → reporta ao dono
   }
-  store.state.agents = [...humans, ...created];
+  // funções (automações) ficam: o onboarding só troca os agentes de IA
+  store.state.agents = [...humans, ...store.state.agents.filter((a) => a.kind === 'function'), ...created];
   store.save();
   refresh(store);
   res.json(store.state.agents);
@@ -277,11 +331,11 @@ app.post('/api/agents', requireCompany, need('admin'), (req, res) => {
 app.put('/api/agents/:id', requireCompany, (req, res) => {
   const a = req.company.getAgent(req.params.id);
   if (!a) return bad(res, 'Não encontrado', 404);
-  const self = a.kind === 'human' && a.userSub === req.session.sub;
+  const self = a.kind === 'human' && isSubOf(a, req.session.sub);
   if (!self && !hasRole(req.member, 'admin')) return bad(res, 'Sem permissão', 403);
   const f = agentFields({ ...a, ...req.body }, req.company);
   if (f.reportsTo === a.id) f.reportsTo = null;
-  if (a.kind === 'human') delete f.prompt;
+  if (a.kind === 'human' || a.kind === 'function') delete f.prompt;
   // papel de acesso (admin/membro) só pela interface, nunca por token
   if (a.kind === 'human' && req.body.appRole && !req.tokenAuth && hasRole(req.member, 'owner') && a.appRole !== 'owner' && ['admin', 'member'].includes(req.body.appRole)) a.appRole = req.body.appRole;
   const moved = (f.reportsTo || null) !== (a.reportsTo || null);
@@ -301,7 +355,7 @@ app.delete('/api/agents/:id', requireCompany, need('admin'), wrap(async (req, re
   if (!a) return bad(res, 'Não encontrado', 404);
   if (a.appRole === 'owner') return bad(res, 'O dono não pode ser removido');
   if (a.kind === 'human') {
-    await kc.removeMember(store.id, a.userSub).catch((e) => console.warn('[kc] removeMember', e.message));
+    for (const sub of subsOf(a)) await kc.removeMember(store.id, sub).catch((e) => console.warn('[kc] removeMember', e.message));
     a.active = false; // mantém histórico de tarefas/mensagens
   } else {
     store.state.agents = store.state.agents.filter((x) => x.id !== a.id);
@@ -363,8 +417,7 @@ app.post('/api/invites/:token/accept', requireUser, wrap(async (req, res) => {
   const problem = inviteProblem(inv);
   if (problem) return bad(res, problem, 404);
   if (inv.email !== String(req.session.email).toLowerCase()) return bad(res, `Este convite é para ${inv.email}. Entre com essa conta.`, 403);
-  const current = await resolveCompany(req.session);
-  if (current && current.id !== store.id) return bad(res, 'Sua conta já faz parte de outra empresa.', 409);
+  // pode fazer parte de várias empresas: o convite só adiciona mais uma
   await kc.addMember(store.id, req.session.sub);
   let person = store.memberBySub(req.session.sub);
   if (!person) {
@@ -376,7 +429,7 @@ app.post('/api/invites/:token/accept', requireUser, wrap(async (req, res) => {
   }
   inv.usedAt = Date.now();
   store.save();
-  updateSession(req.session.sid, { companyId: store.id });
+  updateSession(req.session.sid, { companyId: store.id, newCompany: false });
   runtimeFor(store).logEvent('system', person.id, `${person.name} entrou na empresa como ${person.role}.`);
   refresh(store);
   res.json({ ok: true });
@@ -388,6 +441,7 @@ app.post('/api/goal', requireCompany, (req, res) => {
   const text = str(req.body?.text, 8000);
   if (!text) return bad(res, 'Texto vazio');
   const target = store.getAgent(req.body?.to);
+  if (target?.kind === 'function') return bad(res, `${target.name} é uma função automática: não lê mensagens. Ajuste a configuração dela.`);
   const fallback = store.aiAgents().find((a) => !a.reportsTo || store.getAgent(a.reportsTo)?.kind === 'human') || store.aiAgents()[0];
   const to = target && target.active !== false ? target.id : fallback?.id;
   if (!to) return bad(res, 'Nenhum agente na empresa');
@@ -399,6 +453,7 @@ app.post('/api/goal', requireCompany, (req, res) => {
 app.post('/api/tasks', requireCompany, (req, res) => {
   const { title, description, assigneeId } = req.body || {};
   if (!str(title, 140) || !req.company.getAgent(assigneeId)) return bad(res, 'Título e responsável são obrigatórios');
+  if (req.company.getAgent(assigneeId).kind === 'function') return bad(res, 'Funções automáticas não recebem tarefas: configure-as na ficha delas.');
   res.json(runtimeFor(req.company).createTask({ title, description, assigneeId, creatorId: req.member.id }));
 });
 

@@ -14,6 +14,8 @@ export async function api(method, url, body, raw) {
   });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) { location.href = '/auth/login?next=' + encodeURIComponent(location.pathname + location.search); throw new Error('Não autenticado'); }
+  // tem várias empresas e nenhuma aberta nesta sessão: vai escolher
+  if (r.status === 409 && data.choose && location.pathname !== '/empresas.html') { location.href = data.choose; throw new Error(data.error); }
   if (!r.ok) throw Object.assign(new Error(data.error || r.statusText), { status: r.status, data });
   return data;
 }

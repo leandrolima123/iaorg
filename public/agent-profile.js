@@ -306,11 +306,11 @@ export async function renderKnowledge(root, ctx) {
 export function renderApprovals(root, ctx) {
   root.innerHTML = ctx.approvals.length ? ctx.approvals.slice().reverse().map((a) => `
     <article class="task approval" data-id="${a.id}">
-      <div class="task-top"><span class="task-id">${{ chat: 'Chat do site', email: 'E-mail', whatsapp: 'WhatsApp', ads: 'Google Ads · mudança de campanha' }[a.channel] || 'Ação'}</span><span class="stamp doing">Aguardando</span></div>
+      <div class="task-top"><span class="task-id">${{ chat: 'Chat do site', email: 'E-mail', whatsapp: 'WhatsApp', ads: 'Google Ads · mudança de campanha', trade: 'Binance · ordem de compra' }[a.channel] || 'Ação'}</span><span class="stamp doing">Aguardando</span></div>
       <div class="task-meta">${esc(ctx.agentName(a.agentId))} → <b>${esc(a.preview?.para || 'cliente')}</b>${a.preview?.origem ? ` <span class="hint">(${esc(a.preview.origem)})</span>` : ''}${a.preview?.assunto ? ` · ${esc(a.preview.assunto)}` : ''} · ${when(a.ts)}</div>
       ${a.preview?.conversa || a.preview?.original ? `<details><summary class="hint">Ver ${a.preview.conversa ? 'a conversa' : 'o e-mail original'}</summary><pre class="quote">${esc(a.preview.conversa || a.preview.original)}</pre></details>` : ''}
       ${a.readOnlyText ? `<div class="approval-what">${esc(a.text)}</div>` : `<textarea rows="5" aria-label="Texto da resposta">${esc(a.text)}</textarea>`}
-      <div class="row"><button class="btn small primary" data-ok>${ic(a.channel === 'ads' ? 'check' : 'send', 'sm')}${a.channel === 'ads' ? 'Aprovar e aplicar' : 'Aprovar e enviar'}</button>
+      <div class="row"><button class="btn small primary" data-ok>${ic(['ads', 'trade'].includes(a.channel) ? 'check' : 'send', 'sm')}${a.channel === 'trade' ? 'Aprovar e enviar a ordem' : a.channel === 'ads' ? 'Aprovar e aplicar' : 'Aprovar e enviar'}</button>
         <input data-why placeholder="Orientação para o agente refazer (opcional)" style="flex:1;min-width:180px">
         <button class="btn small" data-no>Descartar</button></div>
     </article>`).join('') : '<p class="empty">Nada aguardando aprovação.</p>';

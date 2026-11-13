@@ -12,6 +12,8 @@ import * as kapso from './kapso.js';
 import * as gads from './gads.js';
 import { uid } from './companies.js';
 import { renderEmail } from './brand.js';
+import * as desk from './trading.js';
+import * as bn from './binance.js';
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const POLL_MS = +process.env.INBOX_POLL_SECONDS * 1000 || 60000;
@@ -102,6 +104,17 @@ export const CATALOG = [
     perms: [{ id: 'read', label: 'Ver relatórios' }, { id: 'manage', label: 'Ajustar campanhas (com aprovação)' }],
     suggest: ['marketing', 'trafego', 'ceo'],
   },
+  {
+    type: 'binance', name: 'Binance (mesa de trading)', category: 'Finanças', icon: 'chart-candlestick', auth: 'token', status: 'available',
+    description: 'Mesa de trading de cripto no spot. O analista propõe, outro agente avalia o risco e o executor compra sempre com stop. Os limites da empresa (valor por ordem, risco por operação, perda no dia, posições) são conferidos no código, e o botão "Parar a mesa" bloqueia novas compras na hora. Comece no testnet.',
+    tokenLabel: 'Chave de API da Binance', tokenPlaceholder: 'API Key e Secret Key',
+    tokenParts: [{ key: 'apiKey', label: 'API Key' }, { key: 'apiSecret', label: 'Secret Key', secret: true }],
+    tokenHelp: 'Testnet: entre em testnet.binance.vision com o GitHub e gere uma chave (HMAC). Produção: binance.com → Gerenciamento de API → Criar API (HMAC). Marque SÓ "Enable Spot & Margin Trading" e deixe "Enable Withdrawals" DESLIGADO (o IAORG recusa chave com saque). Recomendado: restringir a chave ao IP do servidor.',
+    tokenUrl: 'https://testnet.binance.vision/',
+    configFields: desk.CONFIG_FIELDS,
+    perms: desk.PERMS,
+    suggest: ['analista_cripto', 'gestor_risco', 'trader', 'head_mesa'],
+  },
   { type: 'notion', name: 'Notion', category: 'Documentos', icon: 'file-text', status: 'soon', description: 'Ler e escrever páginas da base de conhecimento.' },
   { type: 'linear', name: 'Linear', category: 'Projetos', icon: 'list-checks', status: 'soon', description: 'Sincronizar tarefas da obra com o Linear.' },
 ];
@@ -136,6 +149,9 @@ function grant(agent, type, perms, resources = []) {
 
 const conn = (store, type) => (ensure(store)[type]?.connected ? ensure(store)[type] : null);
 const secretOf = (store, type) => decrypt(conn(store, type)?.secret);
+// Para as funções (server/functions.js): o vigia da mesa usa as mesmas regras de conexão e permissão.
+export const watchDesk = (rt, member, opts) => desk.watchDesk(rt, { conn, secretOf, can }, member, opts);
+export const isConnected = (store, type) => !!conn(store, type);
 const access = (agent, type) => agent.access?.[type] || null;
 export const can = (store, agent, type, perm) => !!conn(store, type) && !!access(agent, type)?.perms?.includes(perm);
 /** Canais em que o agente fala com clientes externos (só quem atende tem; dev, marketing etc. não). */
@@ -254,6 +270,7 @@ export function accessSummary(store, agent) {
     if (c.type === 'crisp') where = ` no chat do site ${conn(store, 'crisp').account || ''}`;
     if (c.type === 'whatsapp') where = ` no número ${conn(store, 'whatsapp').account || ''} (texto livre só até 24 h após a última mensagem do cliente)`;
     if (c.type === 'google_ads') { const cfg = conn(store, 'google_ads').config || {}; where = cfg.customerId ? ` na conta ${cfg.name || cfg.customerId} (moeda ${cfg.currency || '?'}); mudanças vão para aprovação de uma pessoa` : ' (nenhuma conta escolhida ainda)'; }
+    if (c.type === 'binance') where = desk.accessLine(desk.deskConfig(conn(store, 'binance').config));
     lines.push(`- ${c.name}: ${perms}${where}`);
   }
   return lines.length ? `Seus acessos a sistemas externos (use as ferramentas correspondentes):\n${lines.join('\n')}\nEntregas de código em repositórios são sempre via repo_open_pr. Ao responder clientes (e-mail ou chat), seja cordial e objetivo; se não souber a resposta, diga que vai verificar e avise o responsável na empresa. Em infraestrutura, investigue logs antes de agir; redeploy, restart e mudança de variáveis afetam produção: explique o motivo no diário (send_message ao seu chefe) antes de executar.` : '';
@@ -379,6 +396,7 @@ export function toolsFor(store, agent) {
       T('ads_add_negative', 'Adiciona uma palavra-chave negativa a uma campanha (para parar de gastar com termos ruins). Vai para aprovação.', { campaign_id: S('id da campanha'), keyword: S('Termo negativo'), match_type: { type: 'string', enum: ['PHRASE', 'EXACT', 'BROAD'] }, reason: S('Motivo') }, ['campaign_id', 'keyword', 'reason']),
     );
   }
+  if (conn(store, 'binance')) tools.push(...desk.deskTools((p) => can(store, agent, 'binance', p)));
   return tools;
 }
 
@@ -426,8 +444,20 @@ async function previewOf(store, name, input) {
   return {};
 }
 
-async function queueApproval(rt, agent, name, input) {
+// extra (opcional, usado pela mesa de trading): { channel, text, preview, reply } — o texto não é editável.
+async function queueApproval(rt, agent, name, input, extra = null) {
   const store = rt.store;
+  if (extra) {
+    const item = { id: uid('ap'), ts: Date.now(), status: 'pending', agentId: agent.id, tool: name, channel: extra.channel, input, text: extra.text, preview: extra.preview || {}, readOnlyText: true };
+    (store.state.approvals ||= []).push(item);
+    if (store.state.approvals.length > 300) store.state.approvals.splice(0, store.state.approvals.length - 300);
+    store.save();
+    const what = extra.channel === 'trade' ? 'uma ordem na Binance' : 'uma ação';
+    rt.logEvent('task', agent.id, `${agent.name} pediu aprovação de ${what}${item.preview.para ? ` — ${item.preview.para}` : ''}`);
+    for (const p of store.state.agents.filter((a) => a.kind === 'human' && ['owner', 'admin'].includes(a.appRole))) rt.emit({ type: 'notify', to: p.id, text: `${agent.name} pediu aprovação de ${what}` });
+    rt.pushSnapshot();
+    return { ok: true, aguardando_aprovacao: true, aviso: extra.reply || 'Foi para aprovação de uma pessoa. Não repita.' };
+  }
   const adsText = {
     ads_campaign_status: () => `${input.status === 'PAUSED' ? 'Pausar' : 'Ativar'} a campanha ${input.campaign_id}.`,
     ads_set_budget: () => `Mudar o orçamento diário da campanha ${input.campaign_id} para ${input.daily_budget}.`,
@@ -485,6 +515,10 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
     if (!adsAccount(store)) return { error: 'Nenhuma conta do Google Ads foi escolhida em Integrações.' };
     if (!String(input.reason || '').trim()) return { error: 'Informe o motivo (reason) com os números que justificam a mudança.' };
     return queueApproval(rt, agent, name, input);
+  }
+  if (desk.DESK_TOOLS.has(name)) {
+    try { return await desk.executeDeskTool(rt, agent, name, input, opts, { can, conn, secretOf, deny, queueApproval }); }
+    catch (e) { return { error: `Binance: ${e.message}` }; }
   }
   switch (name) {
     case 'repo_list_files':
@@ -911,6 +945,19 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
         config.numbers = v.numbers.map(({ id, display, name }) => ({ id, display, name })).slice(0, 20);
         account = [v.number.display, v.number.name].filter(Boolean).join(' · ');
       }
+      if (def.type === 'binance') {
+        const d = desk.deskConfig(config);
+        // trocar de ambiente exige a chave daquele ambiente (testnet e produção têm chaves diferentes)
+        if (prev?.config?.env && prev.config.env !== d.env && !token) return bad(res, 'Para trocar entre testnet e produção, cole a chave do novo ambiente.');
+        config.env = d.env;
+        config.pairs = d.pairs.join(', ');
+        if (config.mode !== 'auto') config.mode = 'approval';
+        const v = await bn.verify(d.env, bn.parseKey(secret));
+        for (const p of d.pairs) await bn.symbolInfo(d.env, p).catch(() => { throw new Error(`Par ${p} não existe na Binance ${d.env === 'prod' ? '' : 'testnet'}`); });
+        config.halted = prev?.config?.halted ?? (d.env === 'prod'); // em produção a mesa começa PARADA: o dono libera depois de conferir
+        account = `${d.env === 'prod' ? 'Produção' : 'Testnet'} · ${v.balances.length} ativo(s) na conta${v.ipRestrict === false ? ' · chave SEM restrição de IP' : ''}`;
+        if (d.env !== prev?.config?.env) delete store.state.tradingDay;
+      }
     } catch (e) { return bad(res, `Não foi possível conectar: ${e.message}`); }
     ensure(store)[def.type] = { connected: true, secret: encrypt(secret), account, config, connectedAt: prev?.connectedAt || Date.now(), seen: prev?.seen };
     store.save();
@@ -942,6 +989,14 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
       c.config = { ...c.config, phoneNumberId: v.number.id, numbers: v.numbers.map(({ id, display, name }) => ({ id, display, name })).slice(0, 20) };
       c.account = [v.number.display, v.number.name].filter(Boolean).join(' · ');
       delete c.seen; // novo número: recomeça a marcação do que já existia
+    } else if (req.params.type === 'binance') {
+      // limites e modo mudam aqui; o ambiente só muda reconectando com a chave certa
+      for (const k of ['pairs', 'maxOrderUsdt', 'maxRiskUsdt', 'maxDailyLossUsdt', 'maxPositions', 'mode']) if (req.body?.[k] !== undefined) c.config[k] = str(req.body[k], 200);
+      const d = desk.deskConfig(c.config);
+      for (const p of d.pairs) { try { await bn.symbolInfo(d.env, p); } catch { return bad(res, `Par ${p} não existe na Binance`); } }
+      c.config.pairs = d.pairs.join(', ');
+      c.config.mode = d.mode;
+      runtimeFor(store).logEvent('system', req.member.id, `Limites da mesa atualizados: ${d.pairs.join(', ')} · até ${d.maxOrderUsdt} USDT/ordem · risco ${d.maxRiskUsdt} USDT · perda/dia ${d.maxDailyLossUsdt} USDT · ${d.maxPositions} posições · execução ${d.mode === 'auto' ? 'automática' : 'com aprovação'}.`);
     } else if (req.params.type === 'google_ads') {
       const want = str(req.body?.customerId, 20).replace(/\D/g, '');
       const list = await gads.accounts(await googleToken(store, 'google_ads'));
@@ -975,6 +1030,45 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     catch (e) { bad(res, e.message, 502); }
   }));
 
+  // Mesa de trading: situação (patrimônio, resultado do dia, posições, propostas) e o botão de parar.
+  app.get('/api/integrations/binance/status', requireCompany, need('admin'), wrap(async (req, res) => {
+    const c = conn(req.company, 'binance');
+    if (!c) return bad(res, 'Conecte a Binance primeiro');
+    res.json(await desk.deskStatus(req.company, { ...c, secretPlain: decrypt(c.secret) }));
+  }));
+  // Painel de operações: resultado real (execuções na Binance), funil da mesa e agentes.
+  app.get('/api/integrations/binance/insights', requireCompany, need('admin'), wrap(async (req, res) => {
+    const c = conn(req.company, 'binance');
+    if (!c) return bad(res, 'Conecte a Binance primeiro');
+    const days = [7, 30, 90, 0].includes(+req.query.dias) ? +req.query.dias : 30;
+    res.json(await desk.deskInsights(req.company, { ...c, secretPlain: decrypt(c.secret) }, { days }));
+  }));
+  // Mercado dos pares da mesa (dados públicos), para o painel do escritório.
+  app.get('/api/integrations/binance/market', requireCompany, wrap(async (req, res) => {
+    const c = conn(req.company, 'binance');
+    if (!c) return bad(res, 'Conecte a Binance primeiro', 404);
+    try { res.json(await desk.deskMarket(c)); } catch (e) { bad(res, `Não consegui ler o mercado na Binance: ${e.message}`, 502); }
+  }));
+  // Pares disponíveis (dados públicos), para o seletor com checkbox; funciona antes de conectar.
+  app.get('/api/integrations/binance/pairs', requireCompany, need('admin'), wrap(async (req, res) => {
+    const env = bn.ENVS[req.query.env] ? req.query.env : (desk.deskConfig(conn(req.company, 'binance')?.config).env);
+    try { res.json({ env, pairs: await bn.usdtPairs(env) }); } catch (e) { bad(res, `Não consegui buscar os pares na Binance: ${e.message}`, 502); }
+  }));
+  app.post('/api/integrations/binance/halt', requireCompany, need('admin'), (req, res) => {
+    const store = req.company;
+    const c = conn(store, 'binance');
+    if (!c) return bad(res, 'Conecte a Binance primeiro');
+    c.config.halted = !!req.body?.halted;
+    if (!c.config.halted) {
+      const miss = desk.missingLimits(desk.deskConfig(c.config));
+      if (miss.length) { c.config.halted = true; return bad(res, `Defina antes os limites: ${miss.join(', ')}.`); }
+    }
+    store.save();
+    runtimeFor(store).logEvent('system', req.member.id, c.config.halted ? `${req.member.name || 'Dono'} PAROU a mesa de trading: nenhuma compra nova até liberar.` : `${req.member.name || 'Dono'} liberou a mesa de trading.`);
+    refresh(store);
+    res.json({ ok: true, halted: c.config.halted });
+  });
+
   app.get('/api/integrations/railway/projects', requireCompany, need('admin'), wrap(async (req, res) => {
     const c = conn(req.company, 'railway');
     if (!c) return bad(res, 'Conecte o Railway primeiro');
@@ -998,7 +1092,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     const store = req.company;
     const a = store.getAgent(req.params.id);
     const def = DEF[req.params.type];
-    if (!a || a.kind === 'human') return bad(res, 'Agente de IA não encontrado', 404);
+    if (!a || a.kind === 'human' || a.kind === 'function') return bad(res, 'Agente de IA não encontrado', 404);
     if (!def || !conn(store, def.type)) return bad(res, 'Integração não conectada');
     const perms = (req.body?.perms || []).filter((p) => def.perms.some((x) => x.id === p));
     const resources = Array.isArray(req.body?.resources) ? req.body.resources.map(String).slice(0, 30) : [];

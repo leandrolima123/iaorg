@@ -476,7 +476,7 @@ export function mountWorkbench(app, { requireCompany, need, wrap, runtimeFor }) 
     const task = store.state.tasks.find((t) => t.id === req.params.id);
     if (!task) return res.status(404).json({ error: 'Tarefa não encontrada' });
     const agent = store.getAgent(task.assigneeId);
-    if (!agent || agent.kind === 'human') return res.status(400).json({ error: 'Só tarefas de agentes de IA voltam para a oficina.' });
+    if (!agent || agent.kind === 'human' || agent.kind === 'function') return res.status(400).json({ error: 'Só tarefas de agentes de IA voltam para a oficina.' });
     if (!['owner', 'admin'].includes(req.member.appRole) && task.creatorId !== req.member.id) return res.status(403).json({ error: 'Sem permissão' });
     if (jobsOf(store).some((j) => j.taskId === task.id && ['starting', 'running', 'finishing'].includes(j.status))) return res.status(400).json({ error: 'A tarefa ainda está em andamento.' });
     const text = String(req.body?.text || '').trim().slice(0, 4000);
@@ -492,7 +492,7 @@ export function mountWorkbench(app, { requireCompany, need, wrap, runtimeFor }) 
     const store = req.company;
     const rt = runtimeFor(store);
     const agent = store.getAgent(req.params.id);
-    if (!agent || agent.kind === 'human') return res.status(404).json({ error: 'Agente de IA não encontrado' });
+    if (!agent || agent.kind === 'human' || agent.kind === 'function') return res.status(404).json({ error: 'Agente de IA não encontrado' });
     if (!enabled()) return res.status(400).json({ error: 'A oficina não está configurada (RUNNER_URL / RUNNER_TOKEN).' });
     if (!store.getSecret('claudeKey')) return res.status(400).json({ error: 'Cadastre a chave do Claude primeiro.' });
     const title = String(req.body?.title || '').trim().slice(0, 140);

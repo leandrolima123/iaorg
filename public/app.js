@@ -7,6 +7,8 @@ import { preview as lookPreviewOf, CHARACTERS, ITEMS, partsOf, normalizeLook } f
 import { renderChatPanel, renderActivityPanel, openLogFor, currentLogAgent, openChatWith, openChatKey } from './chat-ui.js';
 import { renderRoutinesPanel, routinesEditing } from './routines-ui.js';
 import { renderDashboardPanel } from './dashboard-ui.js';
+import { renderTradingPanel } from './trading-ui.js';
+import { renderFunctionPanel, renderFunctionHire } from './functions-ui.js';
 import { renderBrandPanel } from './brand-ui.js';
 
 const hhmm = (ts) => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -24,7 +26,7 @@ const freshDone = new Set();
 
 // ---------------- início ----------------
 const meInfo = await api('GET', '/api/me');
-if (!meInfo.company) location.replace('/onboarding.html');
+if (!meInfo.company) location.replace(meInfo.needsChoice ? '/empresas.html' : '/onboarding.html');
 else if (meInfo.company.onboardingStep !== 'done' && ['owner', 'admin'].includes(meInfo.member.appRole)) location.replace('/onboarding.html');
 
 const office = new Office($('#scene'));
@@ -58,6 +60,19 @@ function renderProx() {
     $('#scene').appendChild(prox.el);
   }
   const el = prox.el;
+  if (a.kind === 'function') { // função automática: não conversa; mostra o que está fazendo e o atalho para configurar
+    el.innerHTML = `
+      <header><span class="who-dot" style="background:${esc(a.color)}"></span><div><b>${esc(a.name)}</b><small>${esc(a.title)} · função automática</small></div>
+        <button type="button" class="pc-x" aria-label="Fechar">${ic('x', 'sm')}</button></header>
+      <div class="pc-msgs"><p class="hint">${a.fn?.enabled === false ? 'Pausada.' : esc(a.runtime?.bubble || 'Trabalhando sozinha no servidor.')}</p>
+        <p class="hint">Funções não leem mensagens: ajuste a configuração para mudar o que ela faz.</p></div>
+      <footer><button type="button" class="pc-link" data-fn-open>${ic('settings', 'sm')}Configurar</button><span class="hint">Esc volta a andar</span></footer>`;
+    el.classList.remove('hidden');
+    $('.pc-x', el).onclick = () => { prox.dismissed = prox.id; closeProx(); };
+    $('[data-fn-open]', el).onclick = () => openFunction(a);
+    placeProx();
+    return;
+  }
   const typed = $('textarea', el)?.value || '';
   const hadFocus = el.contains(document.activeElement);
   const st = statusOf(a);
@@ -202,13 +217,14 @@ function applySnapshot(data) {
   if (prev.company?.name !== S.company.name || prev.company?.logoVersion !== S.company.logoVersion) {
     document.title = `${S.company.name} — Escritório`;
     $('#brandMark').innerHTML = logoUrl ? `<img src="${logoUrl}" alt="${esc(S.company.name)}">` : esc(initials(S.company.name));
-    $('#brandMark').title = S.company.name;
+    $('#brandMark').title = `${S.company.name} · trocar de empresa`;
     office.setCompany(S.company.name, logoUrl);
   }
   const key = (list) => list.map((a) => [a.id, a.name, a.role, a.color, a.kind, a.online, JSON.stringify(a.look || '')].join('|')).join();
   if (key(prev.agents || []) !== key(S.agents)) { office.syncAgents(S.agents, S.me?.id); renderGoalTo(); }
   office.updateBoard(S.tasks);
   syncWork();
+  syncTrading();
   if (S.me) { $('#meChip').textContent = initials(S.me.name); $('#meChip').title = `${S.me.name} · ${ROLE[S.me.appRole]}`; }
   const badge = $('#providerBadge');
   badge.className = 'badge ' + (S.provider === 'mock' ? 'mock' : 'live');
@@ -322,7 +338,7 @@ function addFeed(ev) {
 function renderGoalTo() {
   const sel = $('#goalTo');
   const cur = sel.value;
-  const others = S.agents.filter((a) => a.id !== S.me?.id);
+  const others = S.agents.filter((a) => a.id !== S.me?.id && a.kind !== 'function'); // funções não recebem pedidos
   const root = others.find((a) => a.kind !== 'human' && (!a.reportsTo || isHuman(a.reportsTo)));
   sel.innerHTML = others.map((a) => `<option value="${a.id}">Para ${esc(a.name.split(' ')[0])} — ${esc(a.role)}${a.kind === 'human' ? ' (pessoa)' : ''}</option>`).join('');
   sel.value = others.some((a) => a.id === cur) ? cur : root?.id || '';
@@ -364,10 +380,11 @@ function renderTab(force) {
   if (tab === 'integrations' && !force) return; // só redesenha por ação do usuário (não perde formulários abertos)
   if (tab === 'files' && !force) return;
   if (tab === 'brand' && !force) return; // formulário longo: só redesenha ao abrir a aba
+  if (tab === 'trading' && !force) return; // recarrega pelo botão Atualizar, pelo período ou ao abrir a aba
   if (tab === 'dashboard' && !force) return; // o painel só recarrega por filtro ou ao abrir a aba // arquivos têm o próprio aviso de mudança (não recarrega a prévia à toa)
   if ((tab === 'chat' || tab === 'activity' || tab === 'routines') && !force) return; // atualizam pelos avisos de mensagem/evento
-  if (tab === 'team' && !force && (teamSel === 'kb' || teamSel === 'new' || byId(teamSel))) return; // ficha/aparência abertas: não redesenha // ficha aberta: não perde a edição
-  ({ desk: renderDesk, tasks: renderTasks, chat: renderChat, activity: renderActivity, routines: renderRoutines, files: renderFiles, team: renderTeam, settings: renderSettings, integrations: renderIntegrationsPanel, dashboard: renderDashboard, brand: renderBrand })[tab]?.();
+  if (tab === 'team' && !force && (teamSel === 'kb' || teamSel === 'new' || teamSel === 'newfn' || byId(teamSel))) return; // ficha/aparência abertas: não redesenha // ficha aberta: não perde a edição
+  ({ desk: renderDesk, tasks: renderTasks, chat: renderChat, activity: renderActivity, routines: renderRoutines, files: renderFiles, team: renderTeam, settings: renderSettings, integrations: renderIntegrationsPanel, dashboard: renderDashboard, trading: renderTrading, brand: renderBrand })[tab]?.();
 }
 
 function renderBrand() {
@@ -566,7 +583,7 @@ const myTasks = () => S.tasks.filter((t) => t.assigneeId === S.me?.id && t.statu
 const myApprovals = () => S.tasks.filter((t) => t.status === 'approval' && (t.approval?.by === S.me?.id || (isAdmin() && !byId(t.approval?.by)))).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 function approvalCard(t) {
   const from = byId(t.creatorId), to = byId(t.assigneeId);
-  const others = S.agents.filter((a) => a.active !== false && a.id !== t.creatorId);
+  const others = S.agents.filter((a) => a.active !== false && a.id !== t.creatorId && a.kind !== 'function');
   return `<article class="task appr" data-appr="${esc(t.id)}">
     <div class="task-top"><span class="task-id">${esc(t.id)}</span><span class="stamp doing">Aguardando você</span></div>
     <div class="task-title">${esc(t.title)}</div>
@@ -636,7 +653,38 @@ function deliveryCard(t, files) {
     <div class="row review-actions"><span class="hint">${ic('inbox', 'sm')}${whenDelivered(t.desk.at)}</span>
       <button class="btn small primary" data-dismiss="${t.id}" style="margin-left:auto">${ic('archive', 'sm')}Arquivar</button></div>`, { live: true });
 }
-const myInbox = () => S.messages.filter((m) => m.to === S.me?.id).slice(-30).reverse();
+const myInbox = () => S.messages.filter((m) => m.to === S.me?.id).slice(-80);
+// Mensagens para mim agrupadas por quem mandou: não lidas primeiro, depois a mais recente.
+function deskConversations(inbox) {
+  const by = new Map();
+  for (const m of inbox) {
+    if (m.from === S.me?.id) continue;
+    const c = by.get(m.from) || { from: m.from, msgs: [], unread: 0, last: 0 };
+    c.msgs.push(m); c.last = m.ts;
+    if (!m.readByHuman) c.unread++;
+    by.set(m.from, c);
+  }
+  return [...by.values()].sort((a, b) => (!!b.unread - !!a.unread) || b.last - a.last).slice(0, 8);
+}
+function convCard(c) {
+  const a = byId(c.from);
+  const recent = c.msgs.slice(-3);
+  return `<article class="mesa-conv${c.unread ? ' unread' : ''}" data-conv="${esc(c.from)}">
+    <header><span class="who-dot" style="background:${esc(a?.color || '#8f8d86')}"></span><b>${esc(nameOf(c.from))}</b><span class="role">${esc(a?.role || '')}</span>
+      ${c.unread ? `<span class="mesa-new">${c.unread} nova${c.unread > 1 ? 's' : ''}</span>` : ''}<time>${since(c.last)}</time></header>
+    ${c.msgs.length > recent.length ? `<p class="mesa-more">${c.msgs.length - recent.length} mensagem(ns) anterior(es) na conversa</p>` : ''}
+    ${recent.map((m) => `<div class="mesa-msg${m.readByHuman ? '' : ' new'}"><p>${esc(m.content)}</p><time>${hhmm(m.ts)}</time></div>`).join('')}
+    <div class="mesa-conv-foot">${a ? `<form class="reply" data-to="${esc(c.from)}"><input placeholder="Responder a ${esc(first(c.from))}" aria-label="Resposta para ${esc(nameOf(c.from))}"><button class="btn small primary">Responder</button></form>` : ''}
+      <button type="button" class="btn small ghost" data-open-conv="${esc(c.from)}">${ic('message-square', 'sm')}Abrir conversa</button></div>
+  </article>`;
+}
+// Abrir a conversa no servidor marca como lidas as mensagens dela.
+function markConvRead(from) {
+  const key = [S.me?.id, from].sort().join('|');
+  for (const m of S.messages) if (m.to === S.me?.id && m.from === from) m.readByHuman = true;
+  updateChatCount();
+  api('GET', `/api/threads/messages?key=${encodeURIComponent(key)}`).catch(() => {});
+}
 function updateDeskCount() {
   const n = myTasks().filter((t) => t.status === 'todo').length + (S.approvals?.length || 0) + myReviews().length + myDeliveries().length + myApprovals().length;
   const el = $('#deskCount');
@@ -651,27 +699,38 @@ async function renderDesk() {
   const files = deliveries.length ? await deliveryFiles() : [];
   if (tab !== 'desk') return; // trocou de aba enquanto buscava os arquivos
   const approvalsReq = myApprovals();
-  panel.innerHTML = head('Minha mesa', 'O que a equipe pediu para você e as mensagens que chegaram.') + `
-    ${approvalsReq.length ? `<section class="approvals-sec appr-sec"><h3>Pedidos para aprovar <span class="num">(${approvalsReq.length})</span></h3><p class="hint">Um agente precisa de alguém de outra área. Aprove para ir à fila do responsável, passe para outra pessoa ou recuse com o motivo (volta para quem pediu).</p><div class="review-list">${approvalsReq.map(approvalCard).join('')}</div></section>` : ''}
-    ${deliveries.length ? `<section class="approvals-sec deliveries"><h3>Entregas para você <span class="num">(${deliveries.length})</span></h3><p class="hint">O que os agentes concluíram para você: relatórios, documentos e resultados. Fica aqui até você arquivar (a tarefa continua no histórico). Não ficou bom? Use <b>Pedir ajuste</b>.</p><div class="review-list">${deliveries.map((x) => (x.kind === 'task' ? deliveryCard(x.t, files) : chatDeliveryCard(x.d, files))).join('')}</div></section>` : ''}
-    ${myReviews().length ? `<section class="approvals-sec"><h3>Aguardando sua revisão <span class="num">(${myReviews().length})</span></h3><p class="hint">Entregas dos agentes que precisam do seu olhar: confira o PR ou os arquivos, faça o merge (ou peça ajuste) e aprove. Quando você faz o merge no GitHub, a tarefa se conclui sozinha.</p><div class="review-list">${myReviews().map((t) => taskCard(t, reviewActions(t), { live: true })).join('')}</div></section>` : ''}
-    ${isAdmin() ? `<section class="approvals-sec"><h3>Aprovações <span class="num">(${S.approvals?.length || 0})</span></h3><p class="hint">Respostas que os agentes querem enviar a clientes. Nada sai sem o seu ok (configurável na ficha de cada agente).</p><div id="approvalList"></div></section>` : ''}
+  const reviews = myReviews();
+  const clientAppr = isAdmin() ? S.approvals?.length || 0 : 0;
+  const convs = deskConversations(inbox);
+  const unread = convs.reduce((n, c) => n + c.unread, 0);
+  // na ordem de urgência: o que trava alguém vem primeiro
+  const queue = [
+    ['m-pedidos', 'Para aprovar', approvalsReq.length],
+    ['m-clientes', 'Mensagens a clientes', clientAppr],
+    ['m-revisao', 'Para revisar', reviews.length],
+    ['m-entregas', 'Entregas', deliveries.length],
+    ['m-tarefas', 'Tarefas a começar', tasks.filter((t) => t.status === 'todo').length],
+    ['m-mensagens', 'Não lidas', unread],
+  ].filter((q) => q[2]);
+  const waiting = queue.reduce((n, q) => n + q[2], 0);
+  const sec = (id, title, count, hint, body, cls = '') => `<section class="mesa-sec ${cls}" id="${id}">
+    <header class="mesa-sec-head"><h3>${title}</h3>${count != null ? `<span class="mesa-count num">${count}</span>` : ''}${hint ? `<p class="hint">${hint}</p>` : ''}</header>${body}</section>`;
+  panel.innerHTML = head('Minha mesa', waiting ? `${waiting} ${waiting === 1 ? 'item espera' : 'itens esperam'} por você.` : 'Nada esperando por você agora.',
+    `<label class="btn small mesa-upload">${ic('upload', 'sm')}Enviar arquivo<input type="file" id="upFile" class="sr-only"></label>`) + `
+    ${queue.length
+      ? `<nav class="mesa-queue" aria-label="O que espera por você">${queue.map(([id, label, n], i) => `<button type="button" data-jump="${id}" class="${i === 0 ? 'first' : ''}"><b class="num">${n}</b><span>${label}</span></button>`).join('')}</nav>`
+      : `<div class="mesa-clear">${ic('check', 'sm')}<span><b>Mesa limpa.</b> Quando um agente pedir algo, entregar um trabalho ou mandar mensagem, aparece aqui. Para começar algo novo, dê uma ordem na barra abaixo.</span></div>`}
+    ${approvalsReq.length ? sec('m-pedidos', 'Pedidos para aprovar', approvalsReq.length, 'Um agente precisa de alguém de outra área. Aprove, passe para outra pessoa ou recuse com o motivo.', `<div class="review-list">${approvalsReq.map(approvalCard).join('')}</div>`) : ''}
+    ${clientAppr ? sec('m-clientes', 'Mensagens a clientes', clientAppr, 'Respostas que os agentes querem enviar. Nada sai sem o seu ok.', '<div id="approvalList"></div>') : ''}
+    ${reviews.length ? sec('m-revisao', 'Para revisar', reviews.length, 'Confira o PR ou os arquivos e aprove. O merge no GitHub conclui a tarefa sozinho.', `<div class="review-list">${reviews.map((t) => taskCard(t, reviewActions(t), { live: true })).join('')}</div>`) : ''}
+    ${deliveries.length ? sec('m-entregas', 'Entregas para você', deliveries.length, 'Ficam aqui até você arquivar. Não ficou bom? Peça ajuste.', `<div class="review-list">${deliveries.map((x) => (x.kind === 'task' ? deliveryCard(x.t, files) : chatDeliveryCard(x.d, files))).join('')}</div>`, 'deliveries') : ''}
     <div class="desk">
-      <section><h3>Suas tarefas <span class="num">(${tasks.length})</span></h3>
-        ${tasks.map((t) => taskCard(t, `
+      ${sec('m-tarefas', 'Suas tarefas', tasks.length, '', tasks.map((t) => taskCard(t, `
           <textarea rows="2" placeholder="O que você entregou, links, observações" aria-label="Resultado">${esc(t.result)}</textarea>
           <div class="row">${t.status === 'todo' ? '<button class="btn small" data-st="doing">Começar</button>' : ''}
             <button class="btn small primary" data-st="done">${ic('check', 'sm')}Concluir</button>
-            <button class="btn small" data-st="blocked">Estou bloqueado</button></div>`)).join('') || '<p class="empty">Nenhuma tarefa com você agora. Quando um agente delegar algo, aparece aqui.</p>'}
-        <h3 style="margin-top:10px">Enviar arquivo</h3>
-        <div class="row"><input type="file" id="upFile" style="flex:1" aria-label="Arquivo"><button class="btn small" id="upBtn">${ic('upload', 'sm')}Enviar ao workspace</button></div>
-      </section>
-      <section><h3>Mensagens para você</h3>
-        <div class="thread">${inbox.map((m) => `
-          <div class="msg"><div class="from">${esc(nameOf(m.from))}<span>${esc(byId(m.from)?.role || '')}</span></div>
-            <div><div class="body">${esc(m.content)}</div>${byId(m.from) ? `<form class="reply" data-to="${esc(m.from)}"><input placeholder="Responder a ${esc(first(m.from))}" aria-label="Resposta"><button class="btn small">Responder</button></form>` : ''}</div>
-            <time>${hhmm(m.ts)}</time></div>`).join('') || '<p class="empty" style="padding:14px">Nenhuma mensagem ainda.</p>'}</div>
-      </section>
+            <button class="btn small" data-st="blocked">Estou bloqueado</button></div>`)).join('') || '<p class="empty">Nenhuma tarefa com você. Quando um agente delegar algo, aparece aqui.</p>')}
+      ${sec('m-mensagens', 'Mensagens', unread ? `${unread} não lida${unread > 1 ? 's' : ''}` : null, '', convs.map(convCard).join('') || '<p class="empty">Nenhuma mensagem ainda.</p>')}
     </div>`;
   bindReview(panel);
   bindJobActions(panel);
@@ -714,19 +773,26 @@ async function renderDesk() {
     e.preventDefault();
     const input = $('input', f);
     if (!input.value.trim()) return;
-    try { await api('POST', '/api/goal', { text: input.value.trim(), to: f.dataset.to }); input.value = ''; toast('Resposta enviada'); } catch (err) { toast(err.message, 'err'); }
+    try { await api('POST', '/api/goal', { text: input.value.trim(), to: f.dataset.to }); input.value = ''; markConvRead(f.dataset.to); toast('Resposta enviada'); } catch (err) { toast(err.message, 'err'); }
   });
-  $('#upBtn').onclick = async () => {
-    const f = $('#upFile').files[0];
-    if (!f) { toast('Escolha um arquivo primeiro', 'err'); return; }
-    try { const r = await api('POST', '/api/files/upload?name=' + encodeURIComponent(f.name), f, true); toast('Enviado: ' + r.path); } catch (e) { toast(e.message, 'err'); }
+  $$('[data-open-conv]', panel).forEach((b) => b.onclick = () => openReply(b.dataset.openConv));
+  $$('.mesa-msg p', panel).forEach((p) => { if (p.scrollHeight > p.clientHeight + 2) { p.classList.add('clamped'); p.onclick = () => p.classList.toggle('open'); } });
+  $$('[data-jump]', panel).forEach((b) => b.onclick = () => {
+    const el = $(`#${b.dataset.jump}`, panel);
+    el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    if (el) { el.tabIndex = -1; el.focus({ preventScroll: true }); }
+  });
+  $('#upFile').onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try { const r = await api('POST', '/api/files/upload?name=' + encodeURIComponent(f.name), f, true); toast('Enviado: ' + r.path); } catch (err) { toast(err.message, 'err'); } finally { e.target.value = ''; }
   };
 }
 
 // ---------------- conversas ----------------
 const uiCtx = () => ({
   me: S.me?.id, byId, ownerId: () => S.agents.find((a) => a.appRole === 'owner')?.id || 'board',
-  agents: () => S.agents.slice().sort((a, b) => (a.kind === 'human') - (b.kind === 'human') || a.name.localeCompare(b.name, 'pt-BR')),
+  agents: () => S.agents.filter((a) => a.kind !== 'function').sort((a, b) => (a.kind === 'human') - (b.kind === 'human') || a.name.localeCompare(b.name, 'pt-BR')),
   openLog: (id) => { openLogFor(id); setTab('activity'); },
   rerender: () => renderChat(),
   onRead: (key) => {
@@ -807,6 +873,57 @@ function renderDashboard() {
   if (!$('#dbRoot', panel)) panel.innerHTML = head('Painel', 'A folha de pagamento dos agentes: quanto cada um custou, o que entregou e quanto custa cada entrega.') + '<div id="dbRoot"></div>';
   renderDashboardPanel($('#dbRoot', panel), {});
 }
+function renderTrading() {
+  const panel = $('#panel-trading');
+  if (!binanceConn()) { panel.innerHTML = head('Operações', '') + '<p class="hint">Conecte a Binance em Integrações para ver as operações da mesa.</p>'; return; }
+  if (!isAdmin()) { panel.innerHTML = head('Operações', '') + '<p class="hint">As operações da mesa são visíveis para administradores da empresa.</p>'; return; }
+  const vigia = S.agents.find((a) => a.kind === 'function' && a.fnKey === 'vigia_mesa');
+  const sub = trSub === 'vigia' ? 'vigia' : 'resultados';
+  panel.innerHTML = head('Operações', sub === 'vigia'
+    ? 'O vigia é uma função automática: varre os pares no servidor, sem custo de IA, e só chama o analista quando um par passa em todos os filtros.'
+    : 'O que a mesa de trading fez na Binance: resultado real, acerto, patrimônio, funil da mesa e quem fez o quê.') + `
+    <div class="seg tr-subtabs" role="tablist">
+      <button type="button" role="tab" class="${sub === 'resultados' ? 'on' : ''}" data-trsub="resultados" aria-selected="${sub === 'resultados'}">${ic('chart-candlestick', 'sm')}Resultados</button>
+      <button type="button" role="tab" class="${sub === 'vigia' ? 'on' : ''}" data-trsub="vigia" aria-selected="${sub === 'vigia'}">${ic('radar', 'sm')}Vigia${vigia ? ` · ${esc(vigia.name)}` : ''}</button>
+    </div><div id="trRoot"></div>`;
+  $$('[data-trsub]', panel).forEach((b) => b.onclick = () => { trSub = b.dataset.trsub; renderTrading(); });
+  const root = $('#trRoot', panel);
+  if (sub === 'resultados') { renderTradingPanel(root); return; }
+  if (vigia) { renderFunctionPanel(root, { id: vigia.id, canEdit: isAdmin(), onChange: refresh }); return; }
+  root.innerHTML = `<div class="rt-empty">${ic('radar')}<p>Nenhum vigia na equipe.</p><p class="hint">Contrate o Vigia da mesa: ele vira um personagem do escritório e passa a varrer os pares sozinho.</p><div id="fnHireRoot"></div></div>`;
+  renderFunctionHire($('#fnHireRoot', root), { agents: S.agents, me: S.me?.id, preset: 'vigia_mesa', onBack: () => { teamSel = 'newfn'; setTab('team'); }, onDone: async () => { await refresh(); renderTrading(); } });
+}
+let trSub = 'resultados';
+// Abre a configuração de uma função: o vigia da mesa em Operações → Vigia; as outras na Equipe.
+function openFunction(a) {
+  closeProx(); closeCard();
+  if (a.fnKey === 'vigia_mesa' && binanceConn() && isAdmin()) { trSub = 'vigia'; setTab('trading'); return; }
+  teamSel = a.id; setTab('team');
+}
+
+// ---------------- mesa de trading: aba Operações e painel de mercado no escritório ----------------
+const binanceConn = () => (S.integrations || []).find((i) => i.type === 'binance');
+const market = { timer: null, key: '' };
+async function loadMarket() {
+  if (document.hidden) return;
+  try { office.setMarket(await api('GET', '/api/integrations/binance/market')); }
+  catch (e) { if (e.status === 404) office.setMarket(null); }
+}
+function syncTrading() {
+  const c = binanceConn();
+  $('#tradingTab').classList.toggle('hidden', !c || !isAdmin());
+  if (!c && tab === 'trading') setTab('office');
+  const pairs = [].concat(c?.config?.pairs || []).join(',').trim();
+  const key = c ? `${c.config?.env}:${pairs}:${c.config?.halted}` : '';
+  if (key === market.key) return;
+  market.key = key;
+  clearInterval(market.timer); market.timer = null;
+  if (!c || !pairs) { office.setMarket(null); return; }
+  loadMarket();
+  market.timer = setInterval(loadMarket, 30_000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && market.timer) loadMarket(); });
+
 function renderChat() {
   const panel = $('#panel-chat');
   if (!$('#cvRoot', panel)) panel.innerHTML = head('Conversas', 'Mensagens entre agentes, pessoas e as caixas de entrada, em forma de chat.') + '<div id="cvRoot"></div>';
@@ -984,6 +1101,12 @@ function renderTeam() {
   const panel = $('#panel-team');
   disposeLookPreview();
   if (teamSel === 'new') { renderHire(); return; }
+  if (teamSel === 'newfn') {
+    panel.innerHTML = head('Contratar função', 'Funções são membros automáticos: rodam sozinhas no servidor, sem custo de IA, com uma configuração própria. Aparecem no escritório e no organograma.', `<button class="btn" id="backTeam">${ic('arrow-left', 'sm')}Voltar à equipe</button>`) + '<div id="fnHireRoot"></div>';
+    $('#backTeam').onclick = () => { teamSel = null; renderTeam(); };
+    renderFunctionHire($('#fnHireRoot'), { agents: S.agents, me: S.me?.id, onBack: () => renderTeam(), onDone: async (m) => { teamSel = m.id; await refresh(); renderTeam(); } });
+    return;
+  }
   const a = byId(teamSel) || (teamSel === 'new' ? { id: '', kind: 'ai', name: '', role: '', title: '', color: '#2e5e8c', reportsTo: S.me?.id || null, prompt: '' } : null);
   const canEdit = a && (isAdmin() || a.id === S.me?.id);
   const dis = canEdit ? '' : 'disabled';
@@ -993,32 +1116,33 @@ function renderTeam() {
     renderKnowledge($('#kbRoot'), { canEdit: isAdmin() }).catch((e) => toast(e.message, 'err'));
     return;
   }
-  panel.innerHTML = head('Equipe', 'Agentes de IA e pessoas no mesmo organograma.', isAdmin() ? `<div class="row"><button class="btn" id="kbOpen">${ic('book-open', 'sm')}Base de conhecimento</button><button class="btn" id="newAgent">${ic('plus', 'sm')}Contratar agente</button><a class="btn" href="/onboarding.html?step=team&edit=1">${ic('mail', 'sm')}Convidar pessoa</a></div>` : '') + `
+  panel.innerHTML = head('Equipe', 'Agentes de IA e pessoas no mesmo organograma.', isAdmin() ? `<div class="row"><button class="btn" id="kbOpen">${ic('book-open', 'sm')}Base de conhecimento</button><button class="btn" id="newAgent">${ic('plus', 'sm')}Contratar agente</button><button class="btn" id="newFunction">${ic('cpu', 'sm')}Contratar função</button><a class="btn" href="/onboarding.html?step=team&edit=1">${ic('mail', 'sm')}Convidar pessoa</a></div>` : '') + `
     <div class="team">
       <div class="roster">
         ${S.agents.map((x) => `<button type="button" class="person ${x.id === teamSel ? 'active' : ''}" data-id="${x.id}">
           <span class="swatch" style="background:${x.color}"></span>
           <span><b>${esc(x.name)}${x.id === S.me?.id ? ' (você)' : ''}</b><small>${esc(x.role)} · ${esc(x.title)}</small></span>
-          <span class="kind">${x.kind === 'human' ? `<span class="presence ${x.online ? 'on' : ''}"></span>${ic('user', 'sm')}` : ic('bot', 'sm')}</span></button>`).join('')}
+          <span class="kind" title="${x.kind === 'human' ? 'Pessoa' : x.kind === 'function' ? 'Função automática' : 'Agente de IA'}">${x.kind === 'human' ? `<span class="presence ${x.online ? 'on' : ''}"></span>${ic('user', 'sm')}` : x.kind === 'function' ? ic('cpu', 'sm') : ic('bot', 'sm')}</span></button>`).join('')}
         ${isAdmin() && S.invites?.length ? `<div class="roster-sub"><h4>Convites pendentes</h4></div>${S.invites.map((i) => `<div style="padding:10px 12px;border-bottom:1px solid var(--hair)"><b style="font:700 15px var(--font-sign)">${esc(i.name)}</b><p class="hint">${esc(i.role)} · ${esc(i.email)}</p>
           <div class="row" style="margin-top:6px"><button class="btn small" data-copy="${location.origin}/invite/${i.token}">${ic('copy', 'sm')}Copiar link</button><button class="btn small danger" data-revoke="${i.id}">Revogar</button></div></div>`).join('')}` : ''}
       </div>
       <div>${a ? `
         <form class="form editor" id="agentForm">
-          <p class="hint full">${a.kind === 'human' ? `${ic('user', 'sm')} Pessoa · ${esc(a.email || '')} · ${a.online ? 'online agora' : 'ausente'}` : `${ic('bot', 'sm')} Agente de IA`}</p>
+          <p class="hint full">${a.kind === 'human' ? `${ic('user', 'sm')} Pessoa · ${esc(a.email || '')} · ${a.online ? 'online agora' : 'ausente'}` : a.kind === 'function' ? `${ic('cpu', 'sm')} Função automática · roda no servidor, sem IA; não lê mensagens nem recebe tarefas` : `${ic('bot', 'sm')} Agente de IA`}</p>
           <label class="field"><span>Nome</span><input name="name" value="${esc(a.name)}" required ${dis}></label>
           <label class="field"><span>Cargo</span><input name="role" value="${esc(a.role)}" required ${dis}></label>
           <label class="field"><span>Título</span><input name="title" value="${esc(a.title)}" ${dis}></label>
           <label class="field"><span>Reporta a</span><select name="reportsTo" ${dis}><option value="">Ninguém (topo)</option>${S.agents.filter((x) => x.id !== a.id).map((x) => `<option value="${x.id}" ${x.id === a.reportsTo ? 'selected' : ''}>${esc(x.name)} — ${esc(x.role)}</option>`).join('')}</select></label>
           <label class="field"><span>Cor</span><input type="color" name="color" value="${esc(a.color)}" ${dis}></label>
           ${a.kind === 'human' && S.me?.appRole === 'owner' && a.appRole !== 'owner' ? `<label class="field"><span>Acesso</span><select name="appRole"><option value="member" ${a.appRole === 'member' ? 'selected' : ''}>Membro</option><option value="admin" ${a.appRole === 'admin' ? 'selected' : ''}>Administrador</option></select></label>` : ''}
-          ${a.kind !== 'human' && !a.id ? `<label class="field full"><span>Instruções e responsabilidades</span><textarea name="prompt" ${dis}>${esc(a.prompt)}</textarea></label>` : ''}
-          ${a.kind !== 'human' && a.id ? `<div class="field full"><span>Acessos a sistemas</span><div class="row">${accessChips(a, S.integrations)}${isAdmin() ? `<button type="button" class="btn small" data-goto-integrations>${ic('plug', 'sm')}Gerenciar acessos</button>` : ''}</div></div>` : ''}
+          ${a.kind === 'ai' && !a.id ? `<label class="field full"><span>Instruções e responsabilidades</span><textarea name="prompt" ${dis}>${esc(a.prompt)}</textarea></label>` : ''}
+          ${a.kind === 'ai' && a.id ? `<div class="field full"><span>Acessos a sistemas</span><div class="row">${accessChips(a, S.integrations)}${isAdmin() ? `<button type="button" class="btn small" data-goto-integrations>${ic('plug', 'sm')}Gerenciar acessos</button>` : ''}</div></div>` : ''}
           ${canEdit ? `<div class="row full"><button class="btn primary" type="submit">${a.id ? 'Salvar alterações' : 'Contratar agente'}</button>
-            ${a.id && isAdmin() && a.appRole !== 'owner' && a.id !== S.me?.id ? `<button class="btn danger" type="button" id="fireAgent">${a.kind === 'human' ? 'Remover da empresa' : 'Demitir agente'}</button>` : ''}</div>` : ''}
+            ${a.id && isAdmin() && a.appRole !== 'owner' && a.id !== S.me?.id ? `<button class="btn danger" type="button" id="fireAgent">${a.kind === 'human' ? 'Remover da empresa' : a.kind === 'function' ? 'Demitir função' : 'Demitir agente'}</button>` : ''}</div>` : ''}
         </form>
         ${a.id ? `<h3 class="profile-title">Aparência no escritório</h3><div id="lookRoot"></div>` : ''}
-        ${a.kind !== 'human' && a.id ? `<h3 class="profile-title">Ficha do agente</h3><div id="profileRoot"><p class="hint">Carregando a ficha…</p></div>` : ''}` : '<p class="hint">Escolha alguém na lista para ver e editar. Os agentes delegam tarefas para as pessoas e as pessoas para os agentes.</p>'}
+        ${a.kind === 'function' && a.id ? `<h3 class="profile-title">Configuração da função</h3><div id="fnRoot"><p class="hint">Carregando…</p></div>` : ''}
+        ${a.kind === 'ai' && a.id ? `<h3 class="profile-title">Ficha do agente</h3><div id="profileRoot"><p class="hint">Carregando a ficha…</p></div>` : ''}` : '<p class="hint">Escolha alguém na lista para ver e editar. Os agentes delegam tarefas para as pessoas e as pessoas para os agentes.</p>'}
       </div>
     </div>`;
   $$('.person[data-id]', panel).forEach((el) => el.onclick = () => {
@@ -1027,6 +1151,8 @@ function renderTeam() {
   });
   $('#newAgent')?.addEventListener('click', () => { teamSel = 'new'; hire.step = 'pick'; hire.key = null; renderTeam(); });
   $('#kbOpen')?.addEventListener('click', () => { teamSel = 'kb'; renderTeam(); });
+  $('#newFunction')?.addEventListener('click', () => { teamSel = 'newfn'; renderTeam(); });
+  if ($('#fnRoot')) renderFunctionPanel($('#fnRoot'), { id: a.id, canEdit: isAdmin(), onChange: refresh });
   if ($('#lookRoot')) renderLook($('#lookRoot'), { ...a }, canEdit).catch((e) => { $('#lookRoot').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
   if ($('#profileRoot')) renderProfile($('#profileRoot'), { agentId: a.id, agent: a, canEdit: isAdmin() }).catch((e) => { $('#profileRoot').innerHTML = `<p class="error">${esc(e.message)}</p>`; });
   $('[data-goto-integrations]', panel)?.addEventListener('click', () => setTab('integrations'));
@@ -1163,6 +1289,17 @@ function renderCard() {
   if (!a) { el.classList.add('hidden'); return; }
   if (isEditing(el) && el.dataset.agent === a.id) return;
   el.dataset.agent = a.id;
+  if (a.kind === 'function') {
+    el.classList.remove('hidden');
+    el.innerHTML = `<button class="btn small ghost close" title="Fechar" aria-label="Fechar">${ic('x', 'sm')}</button>
+      <h3>${esc(a.name)}</h3>
+      <div class="sub">${ic('cpu', 'sm')} ${esc(a.title)} · função automática · <span class="stamp ${a.fn?.enabled === false ? 'todo' : 'doing'}">${a.fn?.enabled === false ? 'pausada' : 'trabalhando'}</span></div>
+      <p class="hint">${esc(a.runtime?.bubble || 'Roda sozinha no servidor, sem IA. Não lê mensagens nem recebe tarefas.')}</p>
+      <button class="btn small primary" data-fn-open>${ic('settings', 'sm')}Configurar</button>`;
+    el.querySelector('.close').onclick = closeCard;
+    el.querySelector('[data-fn-open]').onclick = () => openFunction(a);
+    return;
+  }
   const st = statusOf(a);
   const tasks = S.tasks.filter((t) => t.assigneeId === a.id && t.status !== 'done');
   const msgs = S.messages.filter((m) => m.from === a.id || m.to === a.id).slice(-4).reverse();

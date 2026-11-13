@@ -45,7 +45,7 @@ export async function renderRoutinesPanel(root, ctx) {
       const last = r.lastRun;
       const mine = r.kind === 'meeting' && r.participants.includes(ctx.me);
       return `<article class="rt-card ${r.enabled ? '' : 'off'}" data-id="${r.id}">
-        <header><span class="tag">${r.kind === 'meeting' ? 'Reunião' : 'Tarefa'}</span>${r.enabled ? '' : '<span class="tag">pausada</span>'}${r.skipNext ? '<span class="tag">pula a próxima</span>' : ''}${r.running ? '<span class="tag live">rodando agora</span>' : ''}</header>
+        <header><span class="tag">${{ meeting: 'Reunião', message: 'Aviso' }[r.kind] || 'Tarefa'}</span>${r.enabled ? '' : '<span class="tag">pausada</span>'}${r.skipNext ? '<span class="tag">pula a próxima</span>' : ''}${r.running ? '<span class="tag live">rodando agora</span>' : ''}</header>
         <h3>${esc(r.name)}</h3>
         <p class="rt-when">${ic('calendar-clock', 'sm')}${esc(r.scheduleText)}</p>
         <p class="rt-people">${r.kind === 'meeting' ? `${r.participants.map((id) => chip(ctx, id)).join('')}` : chip(ctx, r.assigneeId)}</p>
@@ -86,14 +86,16 @@ function renderForm(root, ctx) {
     ${r ? '' : `<div class="rt-tpls">${tpls.map((t) => `<button type="button" class="option rt-tpl" data-tpl="${t.id}">${ic(t.icon, 'sm')}<b>${esc(t.title)}</b><span class="hint">${esc(t.note)}</span></button>`).join('')}</div>`}
     <form class="form editor rt-form" ${r ? '' : 'hidden'}>
       <label class="field"><span>Nome</span><input name="name" required placeholder="Ex.: Monitoramento de infraestrutura"></label>
-      <div class="field"><span>Tipo</span><div class="seg"><label><input type="radio" name="kind" value="task"><span>Tarefa (um agente executa)</span></label><label><input type="radio" name="kind" value="meeting"><span>Reunião (vários conversam)</span></label></div></div>
+      <div class="field"><span>Tipo</span><div class="seg"><label><input type="radio" name="kind" value="task"><span>Tarefa (um agente executa)</span></label><label><input type="radio" name="kind" value="meeting"><span>Reunião (vários conversam)</span></label><label><input type="radio" name="kind" value="message"><span>Aviso (mensagem rápida, sem oficina)</span></label></div>
+        <p class="hint rt-msg">O agente recebe a mensagem e responde no ciclo rápido, com as ferramentas dele: bem mais barato que uma tarefa. Use para o que é frequente e curto (ex.: varredura da mesa a cada 4 h).</p></div>
       <div class="field full rt-sched"><span>Quando</span>
-        <div class="row"><select name="freq"><option value="daily">Todos os dias</option><option value="weekdays">Dias úteis (seg a sex)</option><option value="weekly">Dias da semana…</option><option value="monthly">Todo mês, no dia…</option></select>
+        <div class="row"><select name="freq"><option value="daily">Todos os dias</option><option value="weekdays">Dias úteis (seg a sex)</option><option value="weekly">Dias da semana…</option><option value="monthly">Todo mês, no dia…</option><option value="interval">A cada N horas…</option></select>
+          <span class="rt-every"><input name="everyHours" type="number" min="1" max="12" style="width:70px" title="Intervalo em horas"> h, a partir das</span>
           <span class="rt-days">${DOW.map((d, i) => `<label class="chip"><input type="checkbox" name="days" value="${i}" hidden><span>${d}</span></label>`).join('')}</span>
           <input name="dayOfMonth" type="number" min="1" max="31" class="rt-dom" style="width:80px" title="Dia do mês">
-          <span>às</span><input name="time" type="time" required style="width:120px"></div></div>
+          <span class="rt-at">às</span><input name="time" type="time" required style="width:120px"></div></div>
       <label class="field rt-task"><span>Quem executa</span><select name="assigneeId">${agents.filter((a) => a.kind !== 'human').map((a) => `<option value="${a.id}">${esc(a.name)} — ${esc(a.role)}</option>`).join('')}</select></label>
-      <label class="field"><span>Pasta das entregas</span><input name="folder" placeholder="Ex.: Tecnologia/Monitoramento"></label>
+      <label class="field rt-folder"><span>Pasta das entregas</span><input name="folder" placeholder="Ex.: Tecnologia/Monitoramento"></label>
       <div class="field full rt-meet"><span>Participantes</span><div class="rt-parts">${agents.map((a) => `<label class="chip"><input type="checkbox" name="participants" value="${a.id}" hidden><span>${esc(a.name)}${a.kind === 'human' ? ' (pessoa)' : ''}</span></label>`).join('')}</div>
         <p class="hint">Pessoas participam enviando a atualização antes (no card da rotina); agentes falam com base no que fizeram de verdade.</p></div>
       <label class="field rt-meet"><span>Facilitador</span><select name="facilitatorId">${agents.filter((a) => a.kind !== 'human').map((a) => `<option value="${a.id}">${esc(a.name)} — ${esc(a.role)}</option>`).join('')}</select></label>
@@ -111,6 +113,7 @@ function renderForm(root, ctx) {
     form.freq.value = d.schedule?.freq || 'daily';
     $$('input[name=days]', form).forEach((i) => { i.checked = (d.schedule?.days || []).includes(+i.value); i.closest('.chip').classList.toggle('on', i.checked); });
     form.dayOfMonth.value = d.schedule?.dayOfMonth || 1;
+    form.everyHours.value = d.schedule?.everyHours || 4;
     form.time.value = d.schedule?.time || '09:00';
     if (d.assigneeId) form.assigneeId.value = d.assigneeId;
     form.folder.value = d.folder || '';
@@ -123,10 +126,15 @@ function renderForm(root, ctx) {
   };
   const sync = () => {
     const kind = $('input[name=kind]:checked', form)?.value || 'task';
-    $$('.rt-task', form).forEach((e) => { e.hidden = kind !== 'task'; });
+    $$('.rt-task', form).forEach((e) => { e.hidden = kind === 'meeting'; });
     $$('.rt-meet', form).forEach((e) => { e.hidden = kind !== 'meeting'; });
+    $$('.rt-msg', form).forEach((e) => { e.hidden = kind !== 'message'; });
+    $('.rt-folder', form).hidden = kind === 'message';
     $('.rt-days', form).hidden = form.freq.value !== 'weekly';
     $('.rt-dom', form).hidden = form.freq.value !== 'monthly';
+    $('.rt-every', form).hidden = form.freq.value !== 'interval';
+    $('.rt-at', form).hidden = form.freq.value === 'interval';
+    form.instructions.previousElementSibling.textContent = kind === 'message' ? 'Mensagem (o que o agente recebe em cada execução)' : 'Instruções (o que fazer em cada execução)';
   };
   $$('input[name=kind]', form).forEach((i) => i.addEventListener('change', sync));
   form.freq.addEventListener('change', sync);
@@ -143,7 +151,7 @@ function renderForm(root, ctx) {
     const kind = $('input[name=kind]:checked', form)?.value || 'task';
     const body = {
       name: form.name.value, kind, enabled: form.enabled.checked, instructions: form.instructions.value, folder: form.folder.value,
-      schedule: { freq: form.freq.value, days: $$('input[name=days]:checked', form).map((i) => +i.value), dayOfMonth: +form.dayOfMonth.value || 1, time: form.time.value },
+      schedule: { freq: form.freq.value, days: $$('input[name=days]:checked', form).map((i) => +i.value), dayOfMonth: +form.dayOfMonth.value || 1, everyHours: +form.everyHours.value || 4, time: form.time.value },
       assigneeId: form.assigneeId.value, participants: $$('input[name=participants]:checked', form).map((i) => i.value),
       facilitatorId: form.facilitatorId.value, createTasks: form.createTasks.checked,
       template: $('[data-tpl].active', root)?.dataset.tpl || r?.template || '',
@@ -177,6 +185,11 @@ async function renderRun(box, ctx, runId, tz) {
   const { run, detail, task, job } = await api('GET', `/api/routine-runs/${runId}`);
   const name = (id) => who(ctx, id)?.name || id;
   if (run.status === 'skipped') { box.innerHTML = `<div class="rt-empty"><p>Execução pulada.</p><p class="hint">${esc(run.note || '')}</p></div>`; return; }
+  if (run.kind === 'message') {
+    box.innerHTML = `<div class="rt-ata"><h4>Aviso enviado</h4><p class="hint">Para ${esc(name(run.agentId))}. A resposta e o que ele fez aparecem na conversa e no diário do agente.</p>
+      <div class="fm-md">${renderMarkdown(String(run.summary || ''))}</div>${run.error ? `<p class="error">${esc(run.error)}</p>` : ''}</div>`;
+    return;
+  }
   if (run.kind === 'meeting') {
     const ata = detail?.ata || {};
     box.innerHTML = `

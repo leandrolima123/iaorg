@@ -31,7 +31,7 @@ export function backfillLedger(store) {
   const total = s.usage?.costUsd || 0;
   const since = Math.min(...(s.events || []).map((e) => e.ts).filter(Boolean), ...(s.messages || []).map((m) => m.ts).filter(Boolean), Date.now());
   s.costUnattributed = { usd: Math.max(0, total - inBook), since, until: Date.now() };
-  for (const a of s.agents || []) if (a.kind !== 'human') (s.agentNames ||= {})[a.id] = { name: a.name, role: a.role };
+  for (const a of s.agents || []) if (a.kind !== 'human' && a.kind !== 'function') (s.agentNames ||= {})[a.id] = { name: a.name, role: a.role };
   s.costBackfill = true;
 }
 
@@ -73,7 +73,7 @@ export function dashboard(store, rt, q = {}) {
   const prev = costsIn(s.costDaily, dayStr(p.prevFromTs), dayStr(p.prevToTs - 1));
   const names = s.agentNames || {};
   const live = new Map((s.agents || []).map((a) => [a.id, a]));
-  const ids = new Set([...(s.agents || []).filter((a) => a.kind !== 'human' && a.active !== false).map((a) => a.id), ...Object.keys(cur.by).filter((id) => id !== '_')]);
+  const ids = new Set([...(s.agents || []).filter((a) => a.kind !== 'human' && a.kind !== 'function' && a.active !== false).map((a) => a.id), ...Object.keys(cur.by).filter((id) => id !== '_')]);
   const tasks = s.tasks || [];
   const jobs = s.jobs || [];
   const msgs = s.messages || [];

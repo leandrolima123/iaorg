@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as oidc from 'openid-client';
 import { DATA_DIR, sign, unsign, randomToken, encrypt, decrypt } from './secrets.js';
-import { userOrganizations } from './keycloak-admin.js';
-import { companyForOrgs, getCompany } from './companies.js';
+import { allCompanies, getCompany } from './companies.js';
 import { authenticate, allowed } from './tokens.js';
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -75,13 +74,18 @@ export function updateSession(sid, patch) {
 
 const cookieOpts = () => `Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}${APP_URL.startsWith('https') ? '; Secure' : ''}`;
 
-// Resolve a empresa da sessão (consulta o Keycloak se ainda não souber).
+// Empresas de que a pessoa faz parte (uma pessoa pode ter várias; todas rodam ao mesmo tempo no servidor).
+export const userCompanies = (session) => allCompanies().filter((s) => s.memberBySub(session.sub));
+
+// Empresa aberta nesta sessão. Com uma empresa só, entra direto; com várias, a pessoa escolhe
+// (resolve null e /api/me avisa needsChoice). newCompany = está criando uma empresa nova no onboarding.
 export async function resolveCompany(session) {
-  if (session.companyId && getCompany(session.companyId)) return getCompany(session.companyId);
-  const orgs = await userOrganizations(session.sub).catch(() => []);
-  const store = companyForOrgs(orgs.map((o) => o.id));
-  if (store) updateSession(session.sid, { companyId: store.id });
-  return store;
+  if (session.newCompany) return null;
+  const cur = session.companyId && getCompany(session.companyId);
+  if (cur && cur.memberBySub(session.sub)) return cur;
+  const mine = userCompanies(session);
+  if (mine.length === 1) { if (session.sid) updateSession(session.sid, { companyId: mine[0].id }); return mine[0]; }
+  return null;
 }
 
 // ---------------- rotas /auth ----------------
@@ -94,7 +98,9 @@ export function mountAuth(app) {
     for (const [k, v] of pending) if (Date.now() - v.createdAt > 600000) pending.delete(k);
     const url = oidc.buildAuthorizationUrl(config, {
       redirect_uri: `${APP_URL}/auth/callback`,
-      scope: 'openid email profile organization',
+      // sem o escopo "organization": com ele o Keycloak pede para escolher a organização no login,
+      // e a empresa já é escolhida no IAORG (Minhas empresas). A ligação pessoa ↔ empresa fica no IAORG.
+      scope: 'openid email profile',
       code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
       code_challenge_method: 'S256',
       state,
@@ -177,7 +183,10 @@ export async function requireCompany(req, res, next) {
     try {
       const store = await resolveCompany(req.session);
       const member = store?.memberBySub(req.session.sub);
-      if (!store || !member) return res.status(403).json({ error: 'Você ainda não faz parte de uma empresa', onboarding: '/onboarding.html' });
+      if (!store || !member) {
+        if (userCompanies(req.session).length && !req.session.newCompany) return res.status(409).json({ error: 'Escolha qual empresa abrir', choose: '/empresas.html' });
+        return res.status(403).json({ error: 'Você ainda não faz parte de uma empresa', onboarding: '/onboarding.html' });
+      }
       req.company = store;
       req.member = member;
       next();

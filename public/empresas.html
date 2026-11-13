@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/brand/iaorg-mark.svg">
+  <title>Minhas empresas — IAORG</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="page">
+  <main class="companies-page">
+    <header class="companies-head">
+      <div class="brand"><img class="mark" src="/brand/iaorg-mark.svg" alt="">IAORG</div>
+      <div class="row"><span class="hint" id="who"></span><a class="btn small ghost" href="/auth/logout">Sair</a></div>
+    </header>
+    <section>
+      <h1>Qual empresa você quer abrir?</h1>
+      <p class="hint">Todas continuam trabalhando ao mesmo tempo: os agentes de cada empresa seguem com as tarefas, rotinas e atendimentos enquanto você olha outra.</p>
+      <div class="companies-grid" id="list" aria-live="polite"><p class="hint">Carregando…</p></div>
+    </section>
+  </main>
+  <script type="module" src="/empresas.js"></script>
+</body>
+</html>

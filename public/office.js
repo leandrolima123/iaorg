@@ -5,6 +5,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { buildCharacter } from './avatars.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { City } from './city.js';
 
 // Móveis KayKit Furniture Bits (CC0). Mesma escala dos personagens KayKit (0,86) e virados para +z.
 const FURN = '/assets/kaykit/furniture';
@@ -63,6 +64,9 @@ const WALK_SPEED = 4.4, RUN_SPEED = 7.5, BODY_R = 0.32, TALK_IN = 2.4, TALK_OUT 
 const FLOOR = { x0: -22.5, x1: 22.5, z0: -15.5, z1: 15.5 };
 const _v = new THREE.Vector3();
 const STAGE = new THREE.Vector3(5, 0, -6.5);
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)');
+const MARKET = { z: -8, y: 3.25 }; // painel de mercado na parede esquerda
+const fmtPrice = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: v >= 1000 ? 2 : v >= 1 ? 4 : 6 }));
 
 const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts });
 const box = (w, h, d, m) => {
@@ -81,11 +85,11 @@ export class Office {
     const w = container.clientWidth, h = container.clientHeight;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#cfd1cd');
-    this.scene.fog = new THREE.Fog('#cfd1cd', 70, 150);
+    this.scene.fog = new THREE.Fog('#cfd1cd', 170, 650);
 
     // Em telas estreitas (celular), abre mais o enquadramento para o escritório caber na largura.
     const aspect = w / h, frustum = aspect < 1.3 ? (34 * 1.3) / aspect : 34;
-    this.camera = new THREE.OrthographicCamera(-frustum * aspect / 2, frustum * aspect / 2, frustum / 2, -frustum / 2, 0.1, 500);
+    this.camera = new THREE.OrthographicCamera(-frustum * aspect / 2, frustum * aspect / 2, frustum / 2, -frustum / 2, 0.1, 1200);
     this.camera.position.set(34, 34, 34);
     this.camera.lookAt(0, 0, 0);
     this.frustum = frustum;
@@ -115,6 +119,7 @@ export class Office {
 
     this.buildLights();
     this.buildWorld();
+    this.city = new City(this.scene, { sun: this.sun, hemi: this.hemi, fill: this.fill, renderer: this.renderer });
     this.decorate();
 
     this.raycaster = new THREE.Raycaster();
@@ -140,8 +145,10 @@ export class Office {
 
   // ---------------- cenário ----------------
   buildLights() {
-    this.scene.add(new THREE.HemisphereLight('#ffffff', '#9c998f', 1.25));
-    const sun = new THREE.DirectionalLight('#fff6e6', 1.7);
+    // cor, intensidade e direção mudam com o horário (city.js → applySky)
+    this.hemi = new THREE.HemisphereLight('#ffffff', '#9c998f', 1.25);
+    this.scene.add(this.hemi);
+    const sun = this.sun = new THREE.DirectionalLight('#fff6e6', 1.7);
     sun.position.set(25, 40, 15);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -151,30 +158,14 @@ export class Office {
     sun.shadow.normalBias = 0.02;
     this.scene.add(sun);
     // Luz de preenchimento fria do lado oposto: volume nos objetos sem estourar o branco.
-    const fill = new THREE.DirectionalLight('#dfe8ff', 0.35);
+    const fill = this.fill = new THREE.DirectionalLight('#dfe8ff', 0.35);
     fill.position.set(-30, 20, -10);
     this.scene.add(fill);
   }
 
   buildWorld() {
     const s = this.scene;
-    // Grama e rua
-    const grass = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), mat('#c6c8c3'));
-    grass.rotation.x = -Math.PI / 2; grass.position.y = -0.06; grass.receiveShadow = true;
-    s.add(grass);
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(220, 7), mat('#55554f'));
-    road.rotation.x = -Math.PI / 2; road.position.set(0, -0.04, -24);
-    s.add(road);
-    for (let x = -100; x < 100; x += 6) {
-      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.25), mat('#f4f4f4'));
-      stripe.rotation.x = -Math.PI / 2; stripe.position.set(x, -0.03, -24);
-      s.add(stripe);
-    }
-    const sidewalk = new THREE.Mesh(new THREE.PlaneGeometry(220, 3), mat('#bdb9ae'));
-    sidewalk.rotation.x = -Math.PI / 2; sidewalk.position.set(0, -0.035, -19);
-    s.add(sidewalk);
-
-    // Piso do escritório
+    // Piso do escritório (cobertura da torre; a cidade fica lá embaixo, em city.js)
     const floor = box(46, 0.2, 32, mat('#eef0ed'));
     floor.position.y = -0.1;
     s.add(floor);
@@ -205,9 +196,6 @@ export class Office {
     wall(32, 3.4, -23, 0, Math.PI / 2);
     wall(46, 1.1, 0, 16, 0);
     wall(32, 1.1, 23, 0, Math.PI / 2);
-
-    // Árvores lá fora
-    for (const [x, z] of [[-30, -20], [-15, -29], [8, -29], [26, -20], [34, 2], [-32, 6], [30, 22], [-26, 24], [0, 27]]) this.tree(x, z);
 
     // Palco central com a marca da empresa
     const slats = new THREE.Group();
@@ -241,6 +229,7 @@ export class Office {
     tv.position.set(15, 2.75, -15.38);
     s.add(tv);
     this.updateBoard([]);
+    this.buildMarketWall();
 
     // Sala de reunião: mesas redondas
     for (const t of MEETING_TABLES) {
@@ -326,8 +315,8 @@ export class Office {
     this.pp = { x, z };
   }
 
-  // Fachada: placa luminosa no alto da parede de vidro, marquise de entrada, totem na calçada,
-  // postes, bancos, faixa de pedestres e carros passando na rua.
+  // Fachada: placa luminosa no alto da parede de vidro, porta de saída para o terraço e o letreiro
+  // vertical da empresa na lateral da torre (aceso também à noite).
   buildFacade() {
     const s = this.scene;
     const graphite = mat('#1c1d1c', { roughness: 0.45 });
@@ -338,65 +327,14 @@ export class Office {
     const face = new THREE.Mesh(new THREE.PlaneGeometry(12.4, 1.75), new THREE.MeshBasicMaterial({ map: this.facadeTex, toneMapped: false }));
     face.position.set(-10, 4.55, -15.99); s.add(face);
     for (const px of [-15.5, -4.5]) { const post = rbox(0.14, 1.3, 0.14, graphite, 0.04); post.position.set(px, 3.55, -16.15); s.add(post); }
-    // marquise de entrada no meio da fachada, com porta de vidro e capacho
-    const canopy = rbox(6.5, 0.22, 3, mat('#e8e6df', { roughness: 0.5 }), 0.08); canopy.position.set(0, 3.7, -17.3); s.add(canopy);
-    for (const px of [-3, 3]) { const p = rbox(0.18, 3.6, 0.18, graphite, 0.05); p.position.set(px, 1.8, -18.6); s.add(p); }
     const door = rbox(2.4, 2.6, 0.12, new THREE.MeshStandardMaterial({ color: '#9fb4ad', transparent: true, opacity: 0.45, roughness: 0.1, metalness: 0.3 }), 0.03); door.position.set(0, 1.3, -16.05); s.add(door);
     const doorFrame = rbox(2.6, 0.14, 0.16, graphite, 0.03); doorFrame.position.set(0, 2.66, -16.05); s.add(doorFrame);
-    const mat1 = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), mat('#f2c200')); mat1.rotation.x = -Math.PI / 2; mat1.position.set(0, -0.03, -17.4); s.add(mat1);
-    // totem na calçada, virado para a câmera
+    // letreiro vertical na lateral da torre, virado para a câmera
     this.totemCanvas = document.createElement('canvas'); this.totemCanvas.width = 256; this.totemCanvas.height = 640;
     this.totemTex = new THREE.CanvasTexture(this.totemCanvas); this.totemTex.colorSpace = THREE.SRGBColorSpace;
-    const totem = new THREE.Group();
-    const tBody = rbox(1.5, 4.2, 0.5, graphite, 0.1); tBody.position.y = 2.1;
-    const tFace = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 3.9), new THREE.MeshBasicMaterial({ map: this.totemTex, toneMapped: false })); tFace.position.set(0, 2.15, 0.26);
-    totem.add(tBody, tFace);
-    totem.position.set(12, 0, -18.4); totem.rotation.y = Math.PI / 4;
-    s.add(totem);
-    // postes de luz, bancos e lixeiras na calçada
-    for (const px of [-20, -8, 8, 20]) {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 4.2, 10), graphite); pole.position.set(px, 2.1, -20.4); pole.castShadow = true;
-      const arm = rbox(0.9, 0.08, 0.12, graphite, 0.03); arm.position.set(px + 0.4, 4.15, -20.4);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.22), new THREE.MeshBasicMaterial({ color: '#fff3c4' })); lamp.position.set(px + 0.7, 4.08, -20.4);
-      s.add(pole, arm, lamp);
-    }
-    for (const bx of [-14, 5.5]) {
-      const seat = rbox(1.8, 0.1, 0.5, mat('#9c6b45', { roughness: 0.7 }), 0.03); seat.position.set(bx, 0.48, -18.2);
-      const l1 = rbox(0.08, 0.45, 0.45, graphite, 0.02); l1.position.set(bx - 0.75, 0.24, -18.2);
-      const l2 = l1.clone(); l2.position.x = bx + 0.75;
-      s.add(seat, l1, l2);
-    }
-    // faixa de pedestres na frente da entrada
-    for (let i = 0; i < 6; i++) {
-      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 6.4), mat('#f4f4f4')); stripe.rotation.x = -Math.PI / 2; stripe.position.set(-2.5 + i, -0.025, -24); s.add(stripe);
-    }
-    // carros passando
-    this.cars = [];
-    const carColors = ['#b8401c', '#2e5e8c', '#f2c200', '#e8e6df', '#1f6b4a'];
-    for (let i = 0; i < 4; i++) {
-      const c = this.car(carColors[i % carColors.length]);
-      const lane = i % 2 ? -22.6 : -25.4;
-      c.position.set(-60 + i * 32, 0, lane);
-      c.rotation.y = i % 2 ? -Math.PI / 2 : Math.PI / 2;
-      c.userData = { speed: (i % 2 ? -1 : 1) * (5 + (i % 3) * 1.6) };
-      s.add(c);
-      this.cars.push(c);
-    }
-  }
-
-  car(color) {
-    const g = new THREE.Group();
-    const body = rbox(1.9, 0.7, 4, mat(color, { roughness: 0.35, metalness: 0.3 }), 0.25); body.position.y = 0.65;
-    const cabin = rbox(1.6, 0.6, 2.1, mat('#222629', { roughness: 0.15, metalness: 0.4 }), 0.2); cabin.position.set(0, 1.2, -0.2);
-    g.add(body, cabin);
-    for (const [wx, wz] of [[-0.9, 1.3], [0.9, 1.3], [-0.9, -1.3], [0.9, -1.3]]) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14), mat('#151515'));
-      w.rotation.z = Math.PI / 2; w.position.set(wx, 0.34, wz); g.add(w);
-    }
-    const lights = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: '#fff3c4' })); lights.position.set(0, 0.75, 2.01);
-    g.add(lights);
-    g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-    return g;
+    const sign = box(0.4, 13, 5.6, graphite); sign.position.set(24.2, -9, 9); s.add(sign);
+    const signFace = new THREE.Mesh(new THREE.PlaneGeometry(5, 12.5), new THREE.MeshBasicMaterial({ map: this.totemTex, toneMapped: false }));
+    signFace.rotation.y = Math.PI / 2; signFace.position.set(24.42, -9, 9); s.add(signFace);
   }
 
   // Tela do videogame: "jogo" colorido animado quando alguém está jogando.
@@ -414,14 +352,6 @@ export class Office {
     g.fillStyle = '#b8401c'; g.fillRect(((W - t * 110) % W + W) % W, 136, 14, 14);
     g.fillStyle = '#ffffff'; g.font = '700 14px Archivo, sans-serif'; g.fillText(`${String(Math.floor(t * 37) % 10000).padStart(5, '0')}`, W - 70, 22);
     this.gameTex.needsUpdate = true;
-  }
-
-  tree(x, z) {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.4), mat('#7a5537'));
-    trunk.position.set(x, 1.2, z); trunk.castShadow = true;
-    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 0), mat('#5d7a4a', { flatShading: true }));
-    crown.position.set(x, 3.6, z); crown.castShadow = true;
-    this.scene.add(trunk, crown);
   }
 
   plant(x, z) {
@@ -710,6 +640,139 @@ export class Office {
     tg.fillStyle = '#f2c200'; tg.font = '700 22px Archivo, sans-serif'; tg.textAlign = 'center';
     tg.fillText('ESCRITÓRIO', t.width / 2, t.height - 30);
     this.totemTex.needsUpdate = true;
+  }
+
+  // Painel de mercado (parede esquerda): tela com os pares da mesa, faixa de cotações rolando no alto
+  // e barras 3D com a variação de 24 h embaixo. Só aparece com a Binance conectada.
+  buildMarketWall() {
+    const M = MARKET, g = new THREE.Group();
+    g.visible = false;
+    const graphite = mat('#1c1d1c', { roughness: 0.45 });
+    const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return [c, t]; };
+    const face = (w, h, tex, x, y) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+      m.rotation.y = Math.PI / 2; m.position.set(x, y, M.z);
+      g.add(m);
+      return m;
+    };
+    const frame = box(0.3, 4.3, 8.2, graphite); frame.position.set(-22.8, M.y, M.z); g.add(frame);
+    const [screenC, screenT] = canvas(1024, 512);
+    face(7.8, 3.9, screenT, -22.64, M.y);
+    const led = box(0.26, 0.6, 8.2, graphite); led.position.set(-22.82, M.y + 2.5, M.z); g.add(led);
+    const [tickC, tickT] = canvas(2048, 64);
+    tickT.wrapS = THREE.RepeatWrapping; tickT.repeat.x = 0.5;
+    face(7.8, 0.44, tickT, -22.68, M.y + 2.5);
+    const ped = box(0.8, 0.3, 8.2, mat('#2b2c2a', { roughness: 0.6 })); ped.position.set(-22.55, 0.15, M.z); g.add(ped);
+    const [labC, labT] = canvas(1024, 40);
+    face(7.8, 0.3, labT, -22.14, 0.15);
+    const bars = new THREE.Group(); g.add(bars);
+    this.scene.add(g);
+    this.market = { g, screenC, screenT, tickC, tickT, labC, labT, bars, data: null };
+  }
+
+  /** Dados de mercado da mesa (ou null para esconder o painel). */
+  setMarket(data) {
+    const m = this.market;
+    const show = !!data?.pairs?.length;
+    if (m.g.visible !== show) { m.g.visible = show; this._obs = null; }
+    m.data = show ? data : null;
+    if (!show) return;
+    document.fonts.ready.then(() => { this.drawMarket(); this.drawTicker(); this.syncMarketBars(); });
+  }
+
+  drawMarket() {
+    const { screenC: c, screenT, data } = this.market, g = c.getContext('2d');
+    const W = c.width, H = c.height, F = '"Barlow Condensed", Archivo, sans-serif';
+    const pairs = data.pairs.slice(0, 6);
+    g.fillStyle = '#1c1d1c'; g.fillRect(0, 0, W, H);
+    g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+    g.fillStyle = '#ffffff'; g.font = `700 40px ${F}`; g.fillText('MERCADO', 28, 50);
+    const prod = data.env === 'prod';
+    g.font = `700 22px ${F}`;
+    const tag = prod ? 'PRODUÇÃO' : 'TESTNET', tw = g.measureText(tag).width + 20;
+    g.fillStyle = prod ? '#b8401c' : '#3b3c39'; g.fillRect(190, 24, tw, 32);
+    g.fillStyle = '#ffffff'; g.fillText(tag, 200, 48);
+    if (data.halted) { const x = 200 + tw + 10, t = 'MESA PARADA', w = g.measureText(t).width + 20; g.strokeStyle = '#f08a5d'; g.lineWidth = 3; g.strokeRect(x, 25.5, w, 29); g.fillStyle = '#f08a5d'; g.fillText(t, x + 10, 48); }
+    g.textAlign = 'right'; g.fillStyle = '#8f8d86'; g.font = '500 20px Archivo, sans-serif';
+    g.fillText(`atualizado ${new Date(data.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, W - 28, 48);
+    const rows = pairs.length <= 3 ? 1 : 2, cols = Math.ceil(pairs.length / rows);
+    const gap = 14, x0 = 28, y0 = 74, cw = (W - x0 * 2 - gap * (cols - 1)) / cols, ch = (H - y0 - 22 - gap * (rows - 1)) / rows;
+    pairs.forEach((p, i) => {
+      const x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap);
+      const up = (p.change24h ?? 0) >= 0, color = up ? '#4fbf8a' : '#f08a5d';
+      g.fillStyle = '#2b2c2a'; g.fillRect(x, y, cw, ch);
+      g.textAlign = 'left'; g.fillStyle = '#cbc8bf'; g.font = `700 26px ${F}`; g.fillText(p.base, x + 16, y + 34);
+      g.textAlign = 'right'; g.fillStyle = color; g.font = `700 26px ${F}`;
+      g.fillText(p.change24h == null ? '—' : `${up ? '▲' : '▼'} ${Math.abs(p.change24h).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`, x + cw - 16, y + 34);
+      g.textAlign = 'left'; g.fillStyle = '#ffffff';
+      let size = rows === 1 ? 54 : 40;
+      const price = fmtPrice(p.price);
+      g.font = `700 ${size}px ${F}`;
+      while (g.measureText(price).width > cw - 32 && size > 20) { size -= 2; g.font = `700 ${size}px ${F}`; }
+      g.fillText(price, x + 16, y + 40 + size);
+      const info = [p.rsi14 != null ? `RSI ${Math.round(p.rsi14)}${p.rsi14 >= 70 ? ' · esticado' : p.rsi14 <= 30 ? ' · descontado' : ''}` : null, p.sma20 && p.price ? (p.price >= p.sma20 ? 'acima da média 20' : 'abaixo da média 20') : null].filter(Boolean).join('  ·  ');
+      g.fillStyle = '#8f8d86'; g.font = '500 17px Archivo, sans-serif'; g.fillText(info, x + 16, y + 68 + size);
+      // curva das últimas 48 h
+      const s = p.spark || [];
+      if (s.length > 1) {
+        const top = y + 84 + size, bot = y + ch - 14, lo = Math.min(...s), hi = Math.max(...s), span = hi - lo || 1;
+        if (bot - top > 16) {
+          g.beginPath();
+          s.forEach((v, k) => { const px = x + 16 + (k / (s.length - 1)) * (cw - 32), py = bot - ((v - lo) / span) * (bot - top); k ? g.lineTo(px, py) : g.moveTo(px, py); });
+          g.strokeStyle = color; g.lineWidth = 3; g.lineJoin = 'round'; g.stroke();
+          g.lineTo(x + cw - 16, bot); g.lineTo(x + 16, bot); g.closePath();
+          g.globalAlpha = 0.12; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
+        }
+      }
+    });
+    screenT.needsUpdate = true;
+  }
+
+  drawTicker() {
+    const { tickC: c, tickT, data } = this.market, g = c.getContext('2d');
+    g.fillStyle = '#111214'; g.fillRect(0, 0, c.width, c.height);
+    g.font = '700 34px "Barlow Condensed", Archivo, sans-serif'; g.textBaseline = 'middle';
+    const items = data.pairs.map((p) => ({ name: p.base, price: fmtPrice(p.price), chg: p.change24h }));
+    let x = 20;
+    while (x < c.width) {
+      for (const it of items) {
+        if (x >= c.width) break;
+        g.fillStyle = '#cbc8bf'; g.fillText(it.name, x, 34); x += g.measureText(it.name).width + 12;
+        g.fillStyle = '#ffffff'; g.fillText(it.price, x, 34); x += g.measureText(it.price).width + 12;
+        const up = (it.chg ?? 0) >= 0, t = it.chg == null ? '' : `${up ? '▲' : '▼'} ${Math.abs(it.chg).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+        g.fillStyle = up ? '#4fbf8a' : '#f08a5d'; g.fillText(t, x, 34); x += g.measureText(t).width + 48;
+      }
+    }
+    tickT.needsUpdate = true;
+  }
+
+  syncMarketBars() {
+    const m = this.market, pairs = m.data.pairs, n = pairs.length;
+    const maxAbs = Math.max(1, ...pairs.map((p) => Math.abs(p.change24h || 0)));
+    if (m.bars.children.length !== n) {
+      m.bars.children.forEach((b) => b.geometry.dispose());
+      m.bars.clear();
+      const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+      for (let i = 0; i < n; i++) {
+        const w = Math.min(0.5, (7.2 / n) * 0.55);
+        const b = new THREE.Mesh(geo.clone(), mat('#1f6b4a', { roughness: 0.4 }));
+        b.castShadow = true;
+        b.scale.set(w, 0.01, w);
+        b.position.set(-22.55, 0.3, MARKET.z + 3.6 - (i + 0.5) * (7.2 / n));
+        m.bars.add(b);
+      }
+      geo.dispose();
+    }
+    pairs.forEach((p, i) => {
+      const b = m.bars.children[i], up = (p.change24h ?? 0) >= 0;
+      b.material.color.set(up ? '#1f6b4a' : '#b8401c');
+      b.userData.h = 0.08 + Math.min(Math.abs(p.change24h || 0) / maxAbs, 1) * 0.85;
+    });
+    const g = m.labC.getContext('2d');
+    g.fillStyle = '#2b2c2a'; g.fillRect(0, 0, m.labC.width, m.labC.height);
+    g.font = '700 26px "Barlow Condensed", Archivo, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#e8e6df';
+    pairs.forEach((p, i) => g.fillText(p.base, ((i + 0.5) / n) * m.labC.width, 21));
+    m.labT.needsUpdate = true;
   }
 
   updateBoard(tasks) {
@@ -1245,6 +1308,7 @@ export class Office {
     rect(11.5 - 1.75, 11.5 + 1.75, -11 - 1, -11 + 1);
     rect(17.5 - 1.45, 17.5 + 1.45, -5 - 0.8, -5 + 0.8);
     rect(15 - 4.4, 15 + 4.4, -16, -15.3);
+    if (this.market?.g.visible) rect(-23, -22.1, MARKET.z - 4.15, MARKET.z + 4.15);
     for (const [x, z] of PLANTS) o.push({ cx: x, cz: z, r: 0.42 });
     o.push(...(this.extraObstacles || []));
     this._obs = o;
@@ -1507,6 +1571,11 @@ export class Office {
     // videogame liga quando alguém joga
     if (this.gaming && now - (this.gameDrawn || 0) > 90) { this.gameDrawn = now; this.drawGame(now, true); this.gameOn = true; }
     else if (!this.gaming && this.gameOn) { this.gameOn = false; this.drawGame(now, false); }
+    // painel de mercado: faixa de cotações rolando e barras subindo até a variação do dia
+    if (this.market?.g.visible) {
+      if (!REDUCED_MOTION.matches) this.market.tickT.offset.x = (this.market.tickT.offset.x + dt * 0.035) % 1;
+      for (const b of this.market.bars.children) if (b.userData.h != null) b.scale.y += (b.userData.h - b.scale.y) * Math.min(1, dt * 3);
+    }
     // bolinha de pingue-pongue: vai e volta (contra a parede se só tiver um jogando)
     if (this.ppBall) {
       const n = this.ppPlayers?.size || 0;
@@ -1521,12 +1590,8 @@ export class Office {
         this.ppBall.position.set(from + (to - from) * f, 0.86 + Math.sin(f * Math.PI) * 0.45, this.pp.z + Math.sin(t * 2.3) * 0.25);
       }
     }
-    // carros na rua
-    for (const c of this.cars || []) {
-      c.position.x += c.userData.speed * dt;
-      if (c.position.x > 75) c.position.x = -75;
-      if (c.position.x < -75) c.position.x = 75;
-    }
+    // cidade: trânsito e luz do dia/noite
+    this.city.update(dt, now);
 
     // Câmera acompanha meu personagem enquanto ando (zoom e giro continuam livres).
     if (this.player.active && this.meAv) {

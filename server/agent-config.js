@@ -31,7 +31,7 @@ const SIM_TOOLS = {
 export function mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor }) {
   const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
   const str = (v, max = 300) => String(v ?? '').trim().slice(0, max);
-  const aiAgent = (req) => { const a = req.company.getAgent(req.params.id); return a && a.kind !== 'human' ? a : null; };
+  const aiAgent = (req) => { const a = req.company.getAgent(req.params.id); return a && a.kind !== 'human' && a.kind !== 'function' ? a : null; };
   const people = (store) => store.state.agents.filter((a) => a.kind === 'human' && a.active !== false);
   const rt = (store) => runtimeFor(store);
 

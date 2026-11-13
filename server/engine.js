@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { uid, allCompanies } from './companies.js';
 import { providerFor, callClaude, callMock, describeError, estimateCost, usageOf, cacheMark, warmCache, CACHE_TTL, isTransient } from './llm.js';
+import { tickFunctions, FUNCTION_CATALOG } from './functions.js';
 import { toolsFor, executeIntegrationTool, accessSummary, accessNames, publicState, migrate, escalateNote, customerChannels, can } from './integrations.js';
 import { ROLE_CATALOG } from './templates.js';
 import { brandPromptBlock } from './brand.js';
@@ -194,7 +195,7 @@ export class CompanyRuntime {
       me: member ? { id: member.id, appRole: member.appRole, name: member.name } : null,
       agents: this.s.agents.filter((a) => a.active !== false).map((a) => ({
         ...a,
-        online: a.kind === 'human' ? online.has(a.userSub) : undefined,
+        online: a.kind === 'human' ? [a.userSub, ...(a.altSubs || [])].some((s) => online.has(s)) : undefined,
         runtime: this.agentRuntime(a.id),
       })),
       tasks: this.s.tasks,
@@ -351,6 +352,7 @@ export class CompanyRuntime {
           return { error: `Destinatário desconhecido: ${input.to}` };
         }
         if (to === agent.id) return { error: 'Não envie mensagens para si mesmo.' };
+        if (store.getAgent(to)?.kind === 'function') return { error: `${store.getAgent(to).name} é uma função automática: não lê mensagens. Fale com quem a supervisiona.` };
         this.postMessage(agent.id, to, input.content);
         if (this.isHuman(to)) {
           // Responder uma pessoa é trabalho de mesa: continua sentado, com o balão da resposta
@@ -366,6 +368,7 @@ export class CompanyRuntime {
       case 'create_task': {
         const assignee = store.getAgent(input.assignee_id);
         if (!assignee || assignee.active === false) return { error: `Colega desconhecido: ${input.assignee_id}. Use um id do organograma.` };
+        if (assignee.kind === 'function') return { error: `${assignee.name} é uma função automática: não recebe tarefas.` };
         const parent = input.parent_task_id ? this.s.tasks.find((t) => t.id === input.parent_task_id) : null;
         const approver = this.approverFor(agent, assignee);
         const t = this.createTask({ title: input.title, description: input.description, assigneeId: assignee.id, creatorId: agent.id, parentId: parent?.id || null, ...(approver ? { status: 'approval' } : {}) });
@@ -509,8 +512,9 @@ export class CompanyRuntime {
     // Organograma com responsabilidades: o que cada colega faz e a que sistemas tem acesso (para pedir à pessoa certa).
     const org = this.s.agents.filter((a) => a.active !== false)
       .map((a) => {
-        const head = `- id: ${a.id} | ${a.name} — ${a.title} (${a.role})${a.kind === 'human' ? ' (humano)' : ''}${a.id === agent.id ? ' ← você' : ''}${a.reportsTo ? ` | reporta a: ${a.reportsTo}` : ' | topo da hierarquia'}`;
+        const head = `- id: ${a.id} | ${a.name} — ${a.title} (${a.role})${a.kind === 'human' ? ' (humano)' : a.kind === 'function' ? ' (função automática do servidor: não lê mensagens nem recebe tarefas)' : ''}${a.id === agent.id ? ' ← você' : ''}${a.reportsTo ? ` | reporta a: ${a.reportsTo}` : ' | topo da hierarquia'}`;
         if (a.id === agent.id || a.kind === 'human') return head;
+        if (a.kind === 'function') return `${head}\n  faz: ${FUNCTION_CATALOG[a.fnKey]?.summary || 'automação do servidor'}`;
         const acc = accessNames(this.store, a);
         return `${head}\n  faz: ${this.whatTheyDo(a)}${acc.length ? `\n  acessos: ${acc.join('; ')}` : '\n  acessos: nenhum sistema externo'}`;
       })
@@ -916,6 +920,7 @@ export function startScheduler() {
         run.lastRoutineTick = Date.now();
         syncTaskRuns(store);
         tickRoutines(run).catch((e) => console.error('[rotinas]', e.message));
+        tickFunctions(run).catch((e) => console.error('[funções]', e.message));
       }
       if (Date.now() - (run.lastPrWatch || 0) > 60_000) {
         run.lastPrWatch = Date.now();

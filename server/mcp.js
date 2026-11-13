@@ -27,7 +27,7 @@ const TOOLS = [
         empresa: { nome: s.company.name, segmento: s.company.segment, site: s.company.website, descricao: s.company.description, contexto: short(s.company.context, 1500) },
         obra: { pausada: s.paused, motivo: s.usage.pausedReason || null },
         gasto: { mes_usd: +(s.usage.monthCostUsd || 0).toFixed(4), limite_mes_usd: s.usage.budgetUsd, total_usd: +(s.usage.costUsd || 0).toFixed(4) },
-        equipe: s.agents.map((a) => ({ id: a.id, nome: a.name, cargo: a.role, titulo: a.title, tipo: a.kind === 'human' ? 'pessoa' : 'agente_ia', reporta_a: a.reportsTo, status: a.kind === 'human' ? (a.online ? 'online' : 'ausente') : a.runtime?.status })),
+        equipe: s.agents.map((a) => ({ id: a.id, nome: a.name, cargo: a.role, titulo: a.title, tipo: a.kind === 'human' ? 'pessoa' : a.kind === 'function' ? 'funcao_automatica' : 'agente_ia', reporta_a: a.reportsTo, status: a.kind === 'human' ? (a.online ? 'online' : 'ausente') : a.runtime?.status })),
         tarefas: { a_fazer: by('todo'), fazendo: by('doing'), aguardando_voce: by('review'), bloqueadas: by('blocked'), concluidas: by('done') },
         aprovacoes_pendentes: (s.approvals || []).length,
       };
