@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/brand/iaorg-mark.svg">
+  <title>IAORG — Escritório</title>
+  <link rel="preload" href="/vendor/fonts/barlow-condensed/barlow-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body class="app">
+  <div class="shell">
+    <nav class="rail" aria-label="Seções">
+      <div class="mark" id="brandMark" title="IAORG">IA</div>
+      <button class="tab active" data-tab="office"><svg class="i"><use href="/vendor/lucide/sprite.svg#hard-hat"/></svg>Obra</button>
+      <button class="tab" data-tab="desk"><svg class="i"><use href="/vendor/lucide/sprite.svg#inbox"/></svg>Minha mesa<span id="deskCount" class="count hidden">0</span></button>
+      <button class="tab" data-tab="tasks"><svg class="i"><use href="/vendor/lucide/sprite.svg#list-checks"/></svg>Tarefas</button>
+      <button class="tab" data-tab="chat"><svg class="i"><use href="/vendor/lucide/sprite.svg#message-square"/></svg>Conversas</button>
+      <button class="tab" data-tab="routines"><svg class="i"><use href="/vendor/lucide/sprite.svg#calendar-clock"/></svg>Rotinas</button>
+      <button class="tab" data-tab="activity"><svg class="i"><use href="/vendor/lucide/sprite.svg#activity"/></svg>Atividade</button>
+      <button class="tab" data-tab="files"><svg class="i"><use href="/vendor/lucide/sprite.svg#folder-open"/></svg>Arquivos</button>
+      <button class="tab" data-tab="dashboard"><svg class="i"><use href="/vendor/lucide/sprite.svg#chart-column"/></svg>Painel</button>
+      <button class="tab" data-tab="team"><svg class="i"><use href="/vendor/lucide/sprite.svg#users"/></svg>Equipe</button>
+      <button class="tab" data-tab="brand"><svg class="i"><use href="/vendor/lucide/sprite.svg#palette"/></svg>Marca</button>
+      <button class="tab" data-tab="integrations"><svg class="i"><use href="/vendor/lucide/sprite.svg#plug"/></svg>Integrações</button>
+      <div class="rail-foot">
+        <button class="tab" data-tab="settings"><svg class="i"><use href="/vendor/lucide/sprite.svg#settings"/></svg>Ajustes</button>
+        <a class="tab" href="/auth/logout"><svg class="i"><use href="/vendor/lucide/sprite.svg#log-out"/></svg>Sair</a>
+        <div class="me-chip" id="meChip" title=""></div>
+      </div>
+    </nav>
+
+    <header class="sign idle" id="sign" aria-live="polite"></header>
+
+    <main class="stage" id="stage">
+      <div id="scene"></div>
+      <div class="crew" id="crew" aria-label="Equipe"></div>
+    </main>
+
+    <section id="panel-desk" class="panel hidden" aria-label="Minha mesa"></section>
+    <section id="panel-tasks" class="panel hidden" aria-label="Tarefas"></section>
+    <section id="panel-chat" class="panel hidden" aria-label="Conversas"></section>
+    <section id="panel-routines" class="panel hidden" aria-label="Rotinas"></section>
+    <section id="panel-activity" class="panel hidden" aria-label="Atividade dos agentes"></section>
+    <section id="panel-files" class="panel hidden" aria-label="Arquivos"></section>
+    <section id="panel-dashboard" class="panel hidden" aria-label="Painel"></section>
+    <section id="panel-team" class="panel hidden" aria-label="Equipe"></section>
+    <section id="panel-brand" class="panel hidden" aria-label="Marca"></section>
+    <section id="panel-integrations" class="panel hidden" aria-label="Integrações"></section>
+    <section id="panel-settings" class="panel hidden" aria-label="Ajustes"></section>
+
+    <div id="agentCard" class="agent-card hidden" role="dialog" aria-label="Detalhes"></div>
+
+    <aside class="log" aria-label="Diário de obra">
+      <div class="log-head"><h3>Diário de obra</h3><span id="providerBadge" class="badge">…</span></div>
+      <ul id="feed" class="feed"></ul>
+    </aside>
+
+    <form id="goalForm" class="cmd">
+      <span class="label">Nova ordem</span>
+      <select id="goalTo" aria-label="Para quem"></select>
+      <textarea id="goalText" rows="1" placeholder="Ex.: Criar a página de preços com 3 planos" aria-label="Ordem"></textarea>
+      <button class="btn primary" type="submit" id="goalBtn"><svg class="i"><use href="/vendor/lucide/sprite.svg#send"/></svg><span>Enviar</span></button>
+    </form>
+  </div>
+  <div id="connBanner" class="conn hidden">Reconectando…</div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

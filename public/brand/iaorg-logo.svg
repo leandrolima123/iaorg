@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 64" role="img" aria-label="IAORG">
+  <title>IAORG</title>
+  <rect width="64" height="64" fill="#f2c200"/>
+  <polygon points="32,9 51,20 32,31 13,20" fill="#ffffff" stroke="#1c1d1c" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="13,20 32,31 32,55 13,44" fill="#1c1d1c"/>
+  <polygon points="32,31 51,20 51,44 32,55" fill="#3b3c39"/>
+  <g fill="#f2c200">
+    <polygon points="17,28 22,31 22,35 17,32"/>
+    <polygon points="24.5,32.3 29.5,35.2 29.5,39.2 24.5,36.3"/>
+    <polygon points="17,36 22,39 22,43 17,40"/>
+    <polygon points="24.5,40.3 29.5,43.2 29.5,47.2 24.5,44.3"/>
+    <polygon points="34.5,35.2 39.5,32.3 39.5,36.3 34.5,39.2"/>
+    <polygon points="42,31 47,28 47,32 42,35"/>
+    <polygon points="34.5,43.2 39.5,40.3 39.5,44.3 34.5,47.2"/>
+  </g>
+  <g stroke="#1c1d1c" stroke-width="2" stroke-linecap="round">
+    <line x1="32" y1="20" x2="24" y2="20"/>
+    <line x1="32" y1="20" x2="40" y2="20"/>
+  </g>
+  <circle cx="32" cy="20" r="3.6" fill="#f2c200" stroke="#1c1d1c" stroke-width="2"/>
+  <circle cx="23" cy="20" r="2" fill="#1c1d1c"/>
+  <circle cx="41" cy="20" r="2" fill="#1c1d1c"/>
+  <!-- nome -->
+  <text x="78" y="49" fill="#1c1d1c" font-family="'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif" font-weight="800" font-size="50" textLength="160" lengthAdjust="spacingAndGlyphs">IA<tspan fill="#1c1d1c" opacity=".55">ORG</tspan></text>
+</svg>

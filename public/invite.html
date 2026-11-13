@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/brand/iaorg-mark.svg">
+  <title>Convite — IAORG</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="page">
+  <header class="page-bar"><div class="brand"><img class="mark" src="/brand/iaorg-mark.svg" alt="">IAORG</div></header>
+  <main class="invite-wrap"><div class="invite-card" id="card"><div class="body"><p class="hint">Carregando convite…</p></div></div></main>
+  <script type="module">
+    import { $, esc, api, ic } from '/common.js';
+    const token = location.pathname.split('/').pop();
+    const card = $('#card');
+    try {
+      const inv = await api('GET', `/api/invites/${token}/info`);
+      const me = await api('GET', '/api/me');
+      card.innerHTML = `
+        <div class="plate">${ic('hard-hat')}<div><small>Convite para a obra</small><b>${esc(inv.company)}</b></div></div>
+        <div class="body">
+          <p><b>${esc(inv.invitedBy)}</b> convidou <b>${esc(inv.email)}</b> para entrar como <b>${esc(inv.title || inv.role)}</b>, com acesso de ${inv.appRole === 'admin' ? 'administrador' : 'membro'}.</p>
+          ${inv.emailMatches ? `
+            <label class="field"><span>Seu nome no escritório</span><input id="name" value="${esc(me.user.name)}"></label>
+            <button class="btn primary" id="accept">Aceitar e entrar no escritório</button>`
+          : `<p class="error">Você entrou como <b>${esc(me.user.email)}</b>, mas o convite é para <b>${esc(inv.email)}</b>.</p>
+             <a class="btn" href="/auth/logout">Sair e entrar com ${esc(inv.email)}</a>`}
+          <p id="err" class="error hidden" role="alert"></p>
+        </div>`;
+      $('#accept')?.addEventListener('click', async (ev) => {
+        ev.target.disabled = true;
+        try { await api('POST', `/api/invites/${token}/accept`, { name: $('#name').value }); location.href = '/'; }
+        catch (e) { $('#err').textContent = e.message; $('#err').classList.remove('hidden'); ev.target.disabled = false; }
+      });
+    } catch (e) {
+      card.innerHTML = `<div class="plate">${ic('construction')}<div><small>Convite</small><b>Indisponível</b></div></div>
+        <div class="body"><p class="error">${esc(e.message)}. Peça um novo link para quem convidou você.</p><a class="btn" href="/">Ir para o início</a></div>`;
+    }
+  </script>
+</body>
+</html>

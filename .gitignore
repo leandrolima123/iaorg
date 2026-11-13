@@ -1,0 +1,31 @@
+# dependências e dados locais
+node_modules/
+data/
+
+# segredos (o .env.example, sem valores reais, vai para o Git)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# usuários e senhas de teste do Keycloak local
+keycloak/dev-test-users.md
+
+# skills e agentes de ferramentas de IA instalados localmente (reinstaláveis pelo skills-lock.json)
+.claude/skills/
+.claude/agents/
+.claude/settings.local.json
+
+# logs, temporários e pacotes
+*.log
+*.tmp
+*.tgz
+coverage/
+
+# sistema e editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp

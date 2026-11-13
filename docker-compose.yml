@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-troque-esta-senha}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    # Keycloak com o tema do IAORG embutido (keycloak/Dockerfile)
+    build: ./keycloak
+    image: iaorg-keycloak:26.4.7
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-troque-esta-senha}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      # Usados como placeholders no realm importado (keycloak/iaorg-realm.json)
+      IAORG_APP_URL: ${APP_URL:-http://localhost:3000}
+      IAORG_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-troque-este-segredo-app}
+      IAORG_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-troque-este-segredo-admin}
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+      # O tema de login do IAORG fica dentro da imagem (ver keycloak/Dockerfile), não montado:
+      # pasta montada pode chegar vazia se o Docker subir antes do WSL.
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  iaorg:
+    build: .
+    image: iaorg:latest
+    container_name: iaorg
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: iaorg
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-troque-este-segredo-app}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-troque-este-segredo-admin}
+      # Oficina: tarefas rodam em containers criados pelo runner
+      RUNNER_URL: http://iaorg-runner:7070
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-troque-este-token-do-runner}
+    volumes:
+      - iaorg-data:/app/data
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # Cria e controla os containers de tarefa dos agentes. É o ÚNICO serviço com acesso ao Docker.
+  runner:
+    build: ./runner
+    image: iaorg-runner:latest
+    container_name: iaorg-runner
+    restart: unless-stopped
+    environment:
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-troque-este-token-do-runner}
+      APP_INTERNAL_URL: http://iaorg:3000
+      WORKBENCH_IMAGE: iaorg-workbench:latest
+      MAX_JOBS: ${RUNNER_MAX_JOBS:-4}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Imagem do ambiente de trabalho dos agentes (só é construída, não fica rodando):
+  #   docker compose --profile build build workbench
+  workbench:
+    build: ./workbench
+    image: iaorg-workbench:latest
+    profiles: ["build"]
+
+volumes:
+  iaorg-data:
+  pg-data:

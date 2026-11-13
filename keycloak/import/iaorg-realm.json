@@ -1,0 +1,61 @@
+{
+  "realm": "iaorg",
+  "displayName": "IAORG",
+  "enabled": true,
+  "loginTheme": "iaorg",
+  "organizationsEnabled": true,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "sslRequired": "external",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR", "en"],
+  "defaultLocale": "pt-BR",
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "iaorg-app",
+      "name": "IAORG",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${IAORG_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["${IAORG_APP_URL}/auth/callback"],
+      "webOrigins": ["${IAORG_APP_URL}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${IAORG_APP_URL}/*"
+      }
+    },
+    {
+      "clientId": "iaorg-admin",
+      "name": "IAORG backend (admin API)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${IAORG_ADMIN_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-iaorg-admin",
+      "enabled": true,
+      "serviceAccountClientId": "iaorg-admin",
+      "clientRoles": {
+        "realm-management": ["manage-realm", "view-realm", "manage-users", "view-users", "query-users"]
+      }
+    }
+  ]
+}

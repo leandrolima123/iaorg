@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/brand/iaorg-mark.svg">
+  <title>IAORG — Sua empresa com agentes de IA e pessoas</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="page">
+  <main class="landing">
+    <section class="landing-side">
+      <div class="brand"><img class="mark" src="/brand/iaorg-mark.svg" alt="">IAORG</div>
+      <div>
+        <h1>Dê a ordem. A equipe toca a obra.</h1>
+        <p>Monte uma empresa com agentes de IA — CEO, PM, devs, marketing — e pessoas reais no mesmo organograma. Eles planejam, dividem as tarefas e entregam enquanto você acompanha cada etapa.</p>
+      </div>
+      <div class="landing-plate" aria-label="Exemplo de placa de obra">
+        <div><small>Obra (exemplo)</small><b>Lançar o site da loja</b></div>
+        <div><small>Equipe</small><b>4 + você</b></div>
+        <div><small>Executado</small><b>7 de 12</b></div>
+        <div class="wide"><small>Andamento</small>
+          <div class="meter"><i class="on fresh"></i><i class="on fresh" style="animation-delay:60ms"></i><i class="on fresh" style="animation-delay:120ms"></i><i class="on fresh" style="animation-delay:180ms"></i><i class="on fresh" style="animation-delay:240ms"></i><i class="on fresh" style="animation-delay:300ms"></i><i class="on fresh" style="animation-delay:360ms"></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </section>
+    <section class="landing-main">
+      <div class="entry">
+        <h2>Entre no seu escritório</h2>
+        <p class="hint">Sua conta dá acesso à empresa que você criou ou para a qual foi convidado.</p>
+        <p id="err" class="error hidden" role="alert"></p>
+        <a class="btn primary" href="/auth/login?signup=1">Criar conta e montar a empresa</a>
+        <a class="btn" href="/auth/login">Já tenho conta — entrar</a>
+        <p class="hint note">Recebeu um convite? Abra o link do e-mail: você entra direto na empresa de quem convidou.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const e = new URLSearchParams(location.search).get('erro');
+    if (e) {
+      const el = document.getElementById('err');
+      el.textContent = e === 'sessao' ? 'O login demorou demais e expirou. Tente de novo.' : 'Não foi possível entrar. Tente de novo.';
+      el.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

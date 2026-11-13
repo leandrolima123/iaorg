@@ -1,0 +1,9 @@
+#!/bin/sh
+# IAORG: o agente nunca empurra para a branch principal nem para fora de iaorg/*.
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/iaorg/*) ;;
+    *) echo "IAORG: push bloqueado para $remote_ref (só branches iaorg/*)." >&2; exit 1 ;;
+  esac
+done
+exit 0

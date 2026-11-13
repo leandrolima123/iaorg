@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T14:00:00-03:00",
+  "title": "Design System: IAORG",
+  "extensions": {
+    "colorMeta": {
+      "concrete": { "role": "neutral", "displayName": "Concreto", "canonical": "#dfe0dd", "tonalRamp": ["#262725", "#3d3e3b", "#575955", "#737571", "#91938f", "#b0b2ae", "#cfd1cd", "#eef0ed"] },
+      "paper": { "role": "neutral", "displayName": "Papel de Obra", "canonical": "#f3f4f2", "tonalRamp": ["#2b2c2a", "#454644", "#61625f", "#7f807d", "#9e9f9c", "#bfc0bd", "#dfe0dd", "#f3f4f2"] },
+      "ink": { "role": "neutral", "displayName": "Grafite", "canonical": "#1c1d1c", "tonalRamp": ["#1c1d1c", "#2b2c2a", "#3b3c39", "#4f504c", "#5f5e59", "#8f8d86", "#c2c4bf", "#eef0ed"] },
+      "signal-yellow": { "role": "primary", "displayName": "Amarelo de Sinalização", "canonical": "#f2c200", "tonalRamp": ["#3d3100", "#5e4b00", "#806600", "#a68500", "#d9ad00", "#f2c200", "#f8d95c", "#fdf1c2"] },
+      "plate-green": { "role": "secondary", "displayName": "Verde Placa de Obra", "canonical": "#1f6b4a", "tonalRamp": ["#0b2a1c", "#124130", "#1a5c3f", "#1f6b4a", "#3d8a66", "#6fae8d", "#a9d0bb", "#e3efe8"] },
+      "cone-orange": { "role": "tertiary", "displayName": "Laranja-Cone", "canonical": "#b8401c", "tonalRamp": ["#3d1407", "#5e1f0b", "#8a2f11", "#b8401c", "#d4643f", "#e69072", "#f2bfa9", "#fbe7df"] },
+      "doing-amber": { "role": "tertiary", "displayName": "Âmbar de Obra", "canonical": "#8a6a00" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display de Placa", "purpose": "Títulos de entrada e do onboarding; landing até 64px." },
+      "headline": { "displayName": "Título de Painel", "purpose": "Cabeçalho dos painéis do escritório, em caixa alta." },
+      "title": { "displayName": "Título de Seção", "purpose": "Seções, colunas do quadro e Diário de obra." },
+      "body": { "displayName": "Texto", "purpose": "Leitura, mensagens e diário." },
+      "label": { "displayName": "Rótulo de Placa", "purpose": "Rótulos de campos e da placa de obra, caixa alta espaçada." }
+    },
+    "shadows": [
+      { "name": "lift", "value": "0 1px 0 rgba(28,29,28,.18), 0 8px 18px -10px rgba(28,29,28,.55)", "purpose": "Botão primário, placa de obra, cartão do agente e avisos." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "Entradas, pressão de botão, painéis, régua e carimbos." },
+      { "name": "ease-in-out", "value": "cubic-bezier(0.77, 0, 0.175, 1)", "purpose": "Movimento na tela (reservado)." },
+      { "name": "press", "value": "transform 160ms ease-out → scale(0.97)", "purpose": "Retorno ao pressionar qualquer controle." },
+      { "name": "meter-fill", "value": "scaleX 0→1, 420ms ease-out, 45ms de defasagem por segmento novo", "purpose": "Assinatura: régua de executado avançando." },
+      { "name": "stamp-land", "value": "scale 1.35→1 com rotate(-3deg), 260ms ease-out", "purpose": "Assinatura: carimbo Concluída batendo na tarefa." }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "1100px" },
+      { "name": "mobile", "value": "860px" },
+      { "name": "small", "value": "600px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botão primário",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Única ação principal da área; amarelo só aqui.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m22 2-7 20-4-9-9-4Z\"/><path d=\"M22 2 11 13\"/></svg>Enviar</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;background:#f2c200;color:#1c1d1c;border:2px solid #1c1d1c;border-radius:0;font:600 14px Archivo,system-ui,sans-serif;box-shadow:0 1px 0 rgba(28,29,28,.18),0 8px 18px -10px rgba(28,29,28,.55);cursor:pointer;transition:transform 160ms cubic-bezier(.23,1,.32,1),background-color 160ms ease}.ds-btn-primary:hover{background:#d9ad00}.ds-btn-primary:active{transform:scale(.97)}.ds-btn-primary:focus-visible{outline:2px solid #1c1d1c;outline-offset:2px;box-shadow:0 0 0 5px #f2c200}"
+    },
+    {
+      "name": "Botão secundário",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Ações de apoio.",
+      "html": "<button class=\"ds-btn\">Começar</button>",
+      "css": ".ds-btn{height:38px;padding:0 14px;background:#f3f4f2;color:#1c1d1c;border:2px solid #1c1d1c;border-radius:0;font:600 14px Archivo,system-ui,sans-serif;cursor:pointer;transition:transform 160ms cubic-bezier(.23,1,.32,1),background-color 160ms ease}.ds-btn:hover{background:#fff}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid #1c1d1c;outline-offset:2px;box-shadow:0 0 0 5px #f2c200}"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo de texto com rótulo de placa.",
+      "html": "<label class=\"ds-field\"><span>Nome da empresa</span><input placeholder=\"Ex.: RapidoJa Delivery\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:6px}.ds-field span{font:700 12px/1 'Barlow Condensed',Archivo,sans-serif;text-transform:uppercase;letter-spacing:.12em;color:#3b3c39}.ds-field input{height:40px;padding:9px 11px;background:#fff;border:2px solid #1c1d1c;border-radius:0;font:14px Archivo,system-ui,sans-serif}.ds-field input:focus{outline:none;box-shadow:0 0 0 4px #f2c200}"
+    },
+    {
+      "name": "Placa de obra",
+      "kind": "custom",
+      "refersTo": "site-plate",
+      "description": "Assinatura: objetivo ativo com régua de executado.",
+      "html": "<div class=\"ds-plate\"><div><small>Obra</small><b>Lançar o MVP</b></div><div><small>Executado · 7 de 12</small><b>58%</b><div class=\"ds-meter\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i><i></i><i></i><i></i></div></div></div>",
+      "css": ".ds-plate{display:grid;grid-template-columns:1.4fr 1fr;background:#1f6b4a;color:#fff;border:2px solid #1c1d1c;box-shadow:0 1px 0 rgba(28,29,28,.18),0 8px 18px -10px rgba(28,29,28,.55)}.ds-plate>div{padding:12px 16px;border-right:2px solid rgba(255,255,255,.22)}.ds-plate>div:last-child{border-right:0}.ds-plate small{display:block;font:700 11px 'Barlow Condensed',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#cfe3d7;margin-bottom:6px}.ds-plate b{font:800 26px/1.05 'Barlow Condensed',sans-serif}.ds-meter{display:flex;gap:3px;margin-top:8px}.ds-meter i{flex:1;height:12px;background:rgba(255,255,255,.22)}.ds-meter i.on{background:#f2c200}"
+    },
+    {
+      "name": "Carimbos de estado",
+      "kind": "chip",
+      "description": "Estados de tarefa carimbados.",
+      "html": "<span class=\"ds-stamp\">Concluída</span> <span class=\"ds-stamp ds-block\">Bloqueada</span> <span class=\"ds-stamp ds-doing\">Fazendo</span>",
+      "css": ".ds-stamp{display:inline-block;font:800 12px/1 'Barlow Condensed',sans-serif;letter-spacing:.14em;text-transform:uppercase;padding:3px 6px 2px;border:2px solid currentColor;color:#1f6b4a;transform:rotate(-3deg)}.ds-block{color:#b8401c}.ds-doing{color:#8a6a00;transform:none;border-style:dashed}"
+    },
+    {
+      "name": "Trilho de navegação",
+      "kind": "nav",
+      "refersTo": "rail",
+      "description": "Navegação lateral grafite; aba ativa com ícone amarelo.",
+      "html": "<nav class=\"ds-rail\"><a class=\"ds-tab ds-on\">Obra</a><a class=\"ds-tab\">Tarefas</a><a class=\"ds-tab\">Equipe</a></nav>",
+      "css": ".ds-rail{display:flex;flex-direction:column;gap:4px;width:84px;padding:14px 8px;background:#1c1d1c}.ds-tab{padding:10px 2px;text-align:center;color:#b9b7b0;font:600 11px Archivo,sans-serif;cursor:pointer;transition:color 150ms ease,background-color 150ms ease}.ds-tab:hover{color:#fff}.ds-tab.ds-on{background:#333431;color:#fff;box-shadow:inset 0 -3px 0 #f2c200}"
+    }
+  ],
+  "narrative": {
+    "northStar": "O Canteiro de Obra",
+    "overview": "A empresa do cliente é uma obra em andamento e o painel é o canteiro. Cada objetivo vira uma placa de obra verde com responsável, equipe, início e uma régua de \"executado\"; o feed é o diário de obra; os estados das tarefas são carimbados. A interface é um painel de trabalho diário (modo Operate): denso, legível de relance, com o mundo entrando só por tipo, paleta, densidade e um movimento-assinatura.\n\nO chão é concreto cinza neutro, o texto e as réguas são grafite, e o amarelo de sinalização aparece apenas onde se pode agir. Cantos retos e réguas de 2px dão a estrutura de chapa e andaime; nada de vidro, brilho ou gradiente. O visual anterior (azul-escuro com vidro e acento neon) é a anti-referência declarada.",
+    "keyCharacteristics": [
+      "Placa de obra verde como cabeçalho do objetivo ativo, com régua segmentada de executado.",
+      "Amarelo de sinalização reservado ao acionável e à régua de executado.",
+      "Estados de tarefa como carimbos (Concluída, Bloqueada, Fazendo, A fazer).",
+      "Cantos retos, bordas de 2px grafite, sombras curtas com desfoque só em ação e placa.",
+      "Barlow Condensed em caixa alta para placas e títulos; Archivo para leitura e controles."
+    ],
+    "rules": [
+      { "name": "The Sinal Só no Acionável Rule", "body": "O amarelo nunca é decoração: se está amarelo, dá para clicar, ou é a régua de executado.", "section": "colors" },
+      { "name": "The Concreto Não É Creme Rule", "body": "O fundo é cinza neutro; tons quentes de creme/bege são proibidos no chão.", "section": "colors" },
+      { "name": "The Fita Zebrada Rule", "body": "As listras amarelo/grafite aparecem apenas na placa quando a obra está pausada; é um estado, nunca textura.", "section": "colors" },
+      { "name": "The Números de Placa Rule", "body": "Números de progresso, horários e contagens usam Barlow Condensed com algarismos tabulares.", "section": "typography" },
+      { "name": "The Sem Bloco Duro Rule", "body": "Nunca sombra de bloco sem desfoque (offset sólido); o mundo é chapa e andaime, não neobrutalismo.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do usar o amarelo de sinalização só em ações e na régua de executado.",
+      "Do carimbar estados de tarefa em vez de escondê-los ou mudar a cor do cartão.",
+      "Do usar ícones Lucide do sprite local, traço 1.75.",
+      "Do animar só transform/opacity, até 300ms, com ease-out forte, e respeitar prefers-reduced-motion.",
+      "Do manter as fontes servidas localmente (Archivo e Barlow Condensed via @fontsource)."
+    ],
+    "donts": [
+      "Don't voltar ao fundo azul-escuro com vidro e acento neon do visual anterior.",
+      "Don't usar fundo creme/bege quente; o chão é concreto cinza.",
+      "Don't usar emoji como ícone.",
+      "Don't usar barras coloridas na lateral de cartões, itens de lista ou abas.",
+      "Don't usar sombra de bloco sem desfoque, gradiente em texto ou vidro decorativo.",
+      "Don't pôr rótulos-sobrancelha acima de títulos."
+    ]
+  }
+}

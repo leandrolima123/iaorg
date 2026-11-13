@@ -1,0 +1,10 @@
+{
+  "name": "iaorg-runner",
+  "private": true,
+  "type": "module",
+  "description": "Cria e controla os containers de tarefa dos agentes do IAORG. Único serviço com acesso ao Docker.",
+  "dependencies": {
+    "dockerode": "5.0.1",
+    "tar-stream": "3.2.2"
+  }
+}

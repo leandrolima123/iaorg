@@ -1,0 +1,123 @@
+/* IAORG — Canteiro de Obra (login do Keycloak). Mesma paleta e tipos do app (public/style.css). */
+@font-face { font-family: 'Archivo'; font-weight: 400; font-display: swap; src: url('../fonts/archivo-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo'; font-weight: 600; font-display: swap; src: url('../fonts/archivo-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 700; font-display: swap; src: url('../fonts/barlow-condensed-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 800; font-display: swap; src: url('../fonts/barlow-condensed-latin-800-normal.woff2') format('woff2'); }
+
+:root.iaorg {
+  --concrete: #dfe0dd;
+  --paper: #f3f4f2;
+  --ink: #1c1d1c;
+  --muted: #5f5e59;
+  --hair: #c2c4bf;
+  --sign: #f2c200;
+  --sign-deep: #d9ad00;
+  --done: #1f6b4a;
+  --block: #b8401c;
+  --font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sign: 'Barlow Condensed', 'Archivo', sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --lift: 0 1px 0 rgba(28, 29, 28, .18), 0 8px 18px -10px rgba(28, 29, 28, .55);
+
+  /* PatternFly 5 → IAORG (tema claro) */
+  --pf-v5-global--FontFamily--text: var(--font);
+  --pf-v5-global--FontFamily--heading: var(--font-sign);
+  --pf-v5-global--primary-color--100: var(--ink);
+  --pf-v5-global--primary-color--200: var(--ink);
+  --pf-v5-global--link--Color: var(--ink);
+  --pf-v5-global--link--Color--hover: var(--ink);
+  --pf-v5-global--BackgroundColor--100: transparent;
+  --pf-v5-global--Color--100: var(--ink);
+  --pf-v5-global--Color--200: var(--muted);
+  --pf-v5-global--BorderColor--100: var(--ink);
+  --pf-v5-global--BorderRadius--sm: 0;
+  --keycloak-card-top-color: transparent;
+  color-scheme: light;
+}
+.iaorg ::selection { background: var(--sign); color: var(--ink); }
+
+.iaorg body {
+  background: var(--concrete) !important; color: var(--ink); font-family: var(--font);
+  min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(380px, .9fr);
+}
+
+/* ---------- lado escuro com a apresentação ---------- */
+.iaorg-hero { background: var(--ink); color: #fff; padding: 48px clamp(24px, 5vw, 72px); display: flex; }
+.iaorg-hero-inner { display: flex; flex-direction: column; justify-content: space-between; gap: 32px; width: 100%; }
+.iaorg-brand { display: flex; align-items: center; gap: 10px; font: 800 20px/1 var(--font-sign); letter-spacing: .06em; }
+.iaorg-mark { width: 34px; height: 34px; display: inline-grid; place-items: center; background: var(--sign); color: var(--ink); font: 800 14px/1 var(--font-sign); }
+.iaorg-tagline { font: 800 clamp(40px, 4.6vw, 64px)/.98 var(--font-sign); margin: 0; max-width: 14ch; color: #fff; }
+.iaorg-sub { color: #c9c7c0; font-size: 16px; line-height: 1.55; margin: 16px 0 0; max-width: 46ch; }
+.iaorg-plate { background: var(--done); border: 2px solid #fff; display: grid; grid-template-columns: 1.6fr 1fr 1fr; max-width: 620px; }
+.iaorg-plate > div { padding: 12px 14px; border-right: 2px solid rgba(255, 255, 255, .25); }
+.iaorg-plate > div:nth-child(3) { border-right: 0; }
+.iaorg-plate .wide { grid-column: 1 / -1; border-right: 0; border-top: 2px solid rgba(255, 255, 255, .25); }
+.iaorg-plate small { display: block; font: 700 11px var(--font-sign); letter-spacing: .14em; text-transform: uppercase; color: #cfe3d7; margin-bottom: 4px; }
+.iaorg-plate b { font: 700 22px/1.05 var(--font-sign); color: #fff; }
+.iaorg-meter { display: flex; gap: 3px; }
+.iaorg-meter i { flex: 1; height: 10px; background: rgba(255, 255, 255, .22); transform-origin: left; }
+.iaorg-meter i.on { background: var(--sign); animation: iaorg-seg 480ms var(--ease-out) backwards; }
+.iaorg-meter i:nth-child(2) { animation-delay: 50ms; } .iaorg-meter i:nth-child(3) { animation-delay: 100ms; }
+.iaorg-meter i:nth-child(4) { animation-delay: 150ms; } .iaorg-meter i:nth-child(5) { animation-delay: 200ms; }
+.iaorg-meter i:nth-child(6) { animation-delay: 250ms; } .iaorg-meter i:nth-child(7) { animation-delay: 300ms; }
+@keyframes iaorg-seg { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- formulário ---------- */
+.iaorg .pf-v5-c-login { min-height: 100vh; background: transparent; display: flex; align-items: center; justify-content: center; padding: 32px 20px; }
+.iaorg .pf-v5-c-login__container { grid-template-columns: minmax(0, 27rem); width: 100%; justify-content: center; }
+.iaorg .pf-v5-c-login__header { margin-bottom: 16px; padding: 0; }
+.iaorg-header-brand { display: none; align-items: center; gap: 10px; font: 800 20px/1 var(--font-sign); letter-spacing: .06em; color: var(--ink); }
+.iaorg .pf-v5-c-login__main {
+  background: var(--paper) !important; border: 2px solid var(--ink); border-radius: 0; box-shadow: var(--lift); position: relative;
+  animation: iaorg-in 260ms var(--ease-out);
+}
+@keyframes iaorg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.iaorg .pf-v5-c-login__main-header { border-top: 0; padding-top: 28px; grid-template-columns: minmax(0, 1fr); }
+.iaorg .pf-v5-c-login__main-header .pf-v5-c-login__main-header-utilities { display: none !important; }
+.iaorg .pf-v5-c-title.pf-m-3xl { font: 800 32px/1.05 var(--font-sign); color: var(--ink); letter-spacing: .01em; }
+.iaorg .pf-v5-c-form__label-text { font: 700 12px/1 var(--font-sign); text-transform: uppercase; letter-spacing: .12em; color: #3b3c39; }
+.iaorg .pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: #fff;
+  --pf-v5-c-form-control--before--BorderColor: var(--ink);
+  --pf-v5-c-form-control--before--BorderWidth: 2px;
+  --pf-v5-c-form-control--after--BorderColor: transparent;
+  border-radius: 0;
+}
+.iaorg .pf-v5-c-form-control::before { border-width: 2px; }
+.iaorg .pf-v5-c-form-control:focus-within { box-shadow: 0 0 0 4px var(--sign); }
+.iaorg .pf-v5-c-form-control > input { color: var(--ink); padding-block: 10px; caret-color: var(--ink); }
+.iaorg .pf-v5-c-form-control.pf-m-readonly { --pf-v5-c-form-control--BackgroundColor: #efede7; }
+.iaorg .pf-v5-c-button { border-radius: 0; font-weight: 600; transition: transform 160ms var(--ease-out), background-color 160ms ease; }
+.iaorg .pf-v5-c-button:active { transform: scale(.97); }
+.iaorg .pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--sign);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--sign-deep);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--sign-deep);
+  --pf-v5-c-button--m-primary--active--BackgroundColor: var(--sign-deep);
+  --pf-v5-c-button--m-primary--Color: var(--ink);
+  --pf-v5-c-button--m-primary--hover--Color: var(--ink);
+  --pf-v5-c-button--m-primary--focus--Color: var(--ink);
+  border: 2px solid var(--ink); padding-block: 12px; box-shadow: var(--lift);
+}
+.iaorg .pf-v5-c-button.pf-m-secondary { --pf-v5-c-button--m-secondary--Color: var(--ink); --pf-v5-c-button--m-secondary--after--BorderColor: var(--ink); --pf-v5-c-button--m-secondary--after--BorderWidth: 2px; background: #fff; }
+.iaorg .pf-v5-c-button.pf-m-control { --pf-v5-c-button--m-control--BackgroundColor: #fff; --pf-v5-c-button--m-control--after--BorderColor: var(--ink); --pf-v5-c-button--m-control--Color: var(--ink); border-radius: 0; }
+.iaorg .pf-v5-c-button:focus-visible, .iaorg a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sign); }
+.iaorg a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; font-weight: 600; }
+.iaorg .pf-v5-c-alert { border-radius: 0; border: 2px solid var(--ink); background: #fff; }
+.iaorg .pf-v5-c-alert.pf-m-danger { border-color: var(--block); background: #fbe7df; }
+.iaorg .pf-v5-c-helper-text__item.pf-m-error, .iaorg .kc-feedback-text.pf-m-error { color: var(--block); }
+.iaorg .pf-v5-c-check__label { color: #3b3c39; }
+.iaorg .pf-v5-c-check__input { accent-color: var(--ink); }
+.iaorg .pf-v5-c-login__main-body { padding-bottom: 8px; }
+.iaorg .pf-v5-c-login__main-footer { padding-bottom: 24px; }
+.iaorg .pf-v5-c-login__main-footer-band { margin-inline: 0; border-top: 2px solid var(--ink); background: transparent; color: var(--muted); padding-block: 14px; }
+
+@media (max-width: 960px) {
+  .iaorg body { grid-template-columns: 1fr; }
+  .iaorg-hero { display: none; }
+  .iaorg-header-brand { display: flex; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iaorg-meter i.on, .iaorg .pf-v5-c-login__main { animation: none; }
+  .iaorg .pf-v5-c-button:active { transform: none; }
+}

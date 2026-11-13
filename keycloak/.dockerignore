@@ -1,0 +1,4 @@
+# Só o tema entra na imagem (a importação do realm continua montada e os usuários de teste ficam de fora).
+*
+!themes/
+!themes/**
