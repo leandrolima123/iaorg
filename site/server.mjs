@@ -5,7 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import crypto from 'node:crypto';
+import { validate, mergeLead, rateLimiter, toCsv, checkPassword, notify as notifyLead } from './interesse.mjs';
 
 const ROOT = path.resolve(process.env.SITE_ROOT || '/app');
 const PUB = path.join(ROOT, 'public');
@@ -14,7 +14,7 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR || '/data');
 const LEADS = path.join(DATA_DIR, 'interessados.json');
 const PORT = +process.env.PORT || 8080;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const NOTIFY = { key: process.env.RESEND_API_KEY || '', to: process.env.LEADS_NOTIFY_TO || '', from: process.env.LEADS_FROM || '' };
+const NOTIFY_ON = !!(process.env.RESEND_API_KEY && process.env.LEADS_NOTIFY_TO && process.env.LEADS_FROM);
 
 // Rotas de páginas e pastas montadas (prefixo da URL → pasta no disco)
 const PAGES = { '/': 'landing.html', '/site': 'landing.html', '/privacidade': 'privacidade.html', '/privacy': 'privacidade.html', '/termos': 'termos.html', '/terms': 'termos.html' };
@@ -45,27 +45,7 @@ let leads = [];
 try { leads = JSON.parse(fs.readFileSync(LEADS, 'utf8')); } catch { /* lista vazia */ }
 const saveLeads = () => { fs.writeFileSync(LEADS + '.tmp', JSON.stringify(leads, null, 1)); fs.renameSync(LEADS + '.tmp', LEADS); };
 
-const SIZES = ['so-eu', '2-10', '11-50', '51-200', '200+'];
-const AREAS = ['atendimento', 'desenvolvimento', 'marketing', 'vendas', 'operacoes', 'financeiro', 'outro'];
-const EMAIL = /^[^\s@<>()[\]\\,;:"]{1,64}@[^\s@<>()[\]\\,;:"]+\.[a-z]{2,}$/i;
-const clean = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
-
-const hits = new Map(); // ip → [timestamps] (só em memória, não é gravado)
-function limited(ip) {
-  const now = Date.now(), list = (hits.get(ip) || []).filter((t) => now - t < 10 * 60_000);
-  list.push(now); hits.set(ip, list);
-  if (hits.size > 5000) for (const [k, v] of hits) if (now - v[v.length - 1] > 10 * 60_000) hits.delete(k);
-  return list.length > 6;
-}
-
-async function notify(lead, isNew) {
-  if (!NOTIFY.key || !NOTIFY.to || !NOTIFY.from) return;
-  const text = [`${isNew ? 'Novo interessado' : 'Interessado atualizou o cadastro'} na lista do IAORG`, '', `Nome: ${lead.nome}`, `E-mail: ${lead.email}`, `Empresa: ${lead.empresa || '-'}`, `Equipe: ${lead.tamanho || '-'}`, `Áreas: ${lead.areas.join(', ') || '-'}`, `Mensagem: ${lead.mensagem || '-'}`, '', `Total na lista: ${leads.length}`].join('\n');
-  try {
-    const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { authorization: `Bearer ${NOTIFY.key}`, 'content-type': 'application/json' }, body: JSON.stringify({ from: NOTIFY.from, to: NOTIFY.to.split(',').map((s) => s.trim()), subject: `IAORG: ${isNew ? 'novo interessado' : 'cadastro atualizado'} — ${lead.nome}`, text }), signal: AbortSignal.timeout(8000) });
-    if (!r.ok) console.warn('[site] aviso por e-mail falhou:', r.status);
-  } catch (e) { console.warn('[site] aviso por e-mail falhou:', e.message); }
-}
+const limited = rateLimiter();
 
 function readBody(req, max = 12_000) {
   return new Promise((ok, fail) => {
@@ -81,51 +61,26 @@ async function postInterest(req, res, ip) {
   if (limited(ip)) return json(res, 429, { error: 'Muitas tentativas. Espere alguns minutos e tente de novo.' });
   let b;
   try { b = JSON.parse(await readBody(req)); } catch (e) { return json(res, e.code === 413 ? 413 : 400, { error: 'Pedido inválido.' }); }
-  if (b.site) return json(res, 200, { ok: true }); // campo-isca: robôs preenchem, pessoas não veem
-  const lead = {
-    nome: clean(b.nome, 80), email: clean(b.email, 120).toLowerCase(), empresa: clean(b.empresa, 100),
-    tamanho: SIZES.includes(b.tamanho) ? b.tamanho : '', areas: (Array.isArray(b.areas) ? b.areas : []).filter((a) => AREAS.includes(a)).slice(0, AREAS.length),
-    mensagem: clean(b.mensagem, 600),
-  };
-  const errors = {};
-  if (lead.nome.length < 2) errors.nome = 'Diga como podemos te chamar.';
-  if (!EMAIL.test(lead.email)) errors.email = 'Confira o e-mail.';
-  if (b.consentimento !== true) errors.consentimento = 'Precisamos da sua autorização para guardar o contato.';
-  if (Object.keys(errors).length) return json(res, 422, { error: 'Confira os campos destacados.', campos: errors });
-  const now = new Date().toISOString();
-  const i = leads.findIndex((l) => l.email === lead.email);
+  const v = validate(b);
+  if (v.bot) return json(res, 200, { ok: true });
+  if (v.errors) return json(res, 422, { error: 'Confira os campos destacados.', campos: v.errors });
+  const i = leads.findIndex((l) => l.email === v.lead.email);
   const isNew = i < 0;
-  // reenvio do mesmo e-mail: o que veio vazio mantém o valor anterior
-  const prev = isNew ? {} : leads[i];
-  const merged = { ...lead };
-  for (const k of ['empresa', 'tamanho', 'mensagem']) if (!merged[k] && prev[k]) merged[k] = prev[k];
-  if (!merged.areas.length && prev.areas?.length) merged.areas = prev.areas;
-  const rec = { id: isNew ? crypto.randomUUID() : prev.id, criadoEm: isNew ? now : prev.criadoEm, atualizadoEm: now, ...merged, consentimento: { em: now, versao: '2026-11-16' } };
+  const rec = mergeLead(isNew ? null : leads[i], v.lead);
   if (isNew) leads.push(rec); else leads[i] = rec;
   try { saveLeads(); } catch (e) { console.error('[site] não consegui gravar a lista:', e.message); return json(res, 500, { error: 'Não conseguimos salvar agora. Tente de novo em instantes.' }); }
   console.log(`[site] interessado ${isNew ? 'novo' : 'atualizado'} (${leads.length} na lista)`);
-  notify(rec, isNew);
+  notifyLead(process.env, rec, isNew, leads.length);
   return json(res, 200, { ok: true, novo: isNew });
 }
 
 // ---------- exportação (só com senha) ----------
-function authorized(req) {
-  if (!ADMIN_PASSWORD) return false;
-  const m = /^Basic (.+)$/.exec(req.headers.authorization || '');
-  if (!m) return false;
-  const pass = Buffer.from(m[1], 'base64').toString('utf8').split(':').slice(1).join(':');
-  const a = crypto.createHash('sha256').update(pass).digest(), b = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest();
-  return crypto.timingSafeEqual(a, b);
-}
-const csvCell = (v) => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return `"${s.replace(/"/g, '""')}"`; };
 function exportLeads(req, res, fmt) {
   if (!ADMIN_PASSWORD) return send404(res);
-  if (!authorized(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="IAORG interessados", charset="UTF-8"', ...SECURITY }); return res.end('Senha necessária.'); }
+  if (!checkPassword(req.headers.authorization, ADMIN_PASSWORD)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="IAORG interessados", charset="UTF-8"', ...SECURITY }); return res.end('Senha necessária.'); }
   if (fmt === 'json') return json(res, 200, leads);
-  const head = ['criadoEm', 'atualizadoEm', 'nome', 'email', 'empresa', 'tamanho', 'areas', 'mensagem'];
-  const rows = [head.join(';'), ...leads.map((l) => head.map((k) => csvCell(Array.isArray(l[k]) ? l[k].join(', ') : l[k])).join(';'))];
   res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="interessados-${new Date().toISOString().slice(0, 10)}.csv"`, 'Cache-Control': 'no-store', ...SECURITY });
-  res.end('﻿' + rows.join('\r\n'));
+  res.end(toCsv(leads));
 }
 
 // ---------- estáticos ----------
@@ -212,5 +167,5 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) json(res, 500, { error: 'Erro interno.' }); else res.end();
   }
 });
-server.listen(PORT, () => console.log(`[site] no ar na porta ${PORT} · ${leads.length} interessado(s) na lista · aviso por e-mail ${NOTIFY.key && NOTIFY.to && NOTIFY.from ? 'ligado' : 'desligado'} · exportação ${ADMIN_PASSWORD ? 'ligada' : 'desligada'}`));
+server.listen(PORT, () => console.log(`[site] no ar na porta ${PORT} · ${leads.length} interessado(s) na lista · aviso por e-mail ${NOTIFY_ON ? 'ligado' : 'desligado'} · exportação ${ADMIN_PASSWORD ? 'ligada' : 'desligada'}`));
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => server.close(() => process.exit(0)));

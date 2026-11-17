@@ -8,6 +8,9 @@ data
 .claude-plugin
 .impeccable
 plugins
+netlify
+dist-netlify
+.netlify
 scripts/demo-videos
 site.html
 *.log

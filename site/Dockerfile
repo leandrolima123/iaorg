@@ -10,7 +10,7 @@ RUN npm init -y >/dev/null \
  && npm install --omit=dev --no-audit --no-fund three@0.160.0 @fontsource/archivo@5.3.0 @fontsource/barlow-condensed@5.3.0 \
  && npm cache clean --force
 
-COPY site/server.mjs ./server.mjs
+COPY site/server.mjs site/interesse.mjs ./
 COPY public/landing.html public/privacidade.html public/termos.html public/site.css public/avatars.js ./public/
 COPY public/brand ./public/brand
 COPY public/videos ./public/videos

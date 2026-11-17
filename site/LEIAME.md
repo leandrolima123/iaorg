@@ -15,6 +15,38 @@ docker run --rm -p 8090:8080 -e ADMIN_PASSWORD=troque-esta-senha -v iaorg-site-d
 
 Abra http://localhost:8090.
 
+## Publicar no Netlify
+
+O Netlify serve a landing como site estático e atende o formulário com uma função (`netlify/functions/interesse.mjs`). Os cadastros ficam no **Netlify Blobs**, um registro por e-mail e sem IP. A configuração está toda no `netlify.toml` da raiz:
+- **Build:** o comando `node site/netlify-build.mjs` monta `dist-netlify/` com as páginas em modo "lista de espera".
+- **Cabeçalhos:** os de segurança e de cache.
+- **Redirecionamentos:** `/site`, `/privacy` e `/terms`.
+
+**Pelo GitHub (recomendado, publica de novo a cada push):**
+1. No Netlify, clique em **Add new project → Import an existing project → GitHub** e escolha `leandrolima123/iaorg`.
+2. Deixe os campos de build como estão: o Netlify lê tudo do `netlify.toml`.
+3. Em **Project configuration → Environment variables**, crie as variáveis da tabela abaixo.
+4. Clique em **Deploy**. Depois, em **Domain management**, ligue o seu domínio.
+
+**Pelo terminal (sem GitHub):**
+
+```bash
+npm install
+npx netlify-cli login
+npx netlify-cli deploy --build --prod
+```
+
+Na primeira vez, o CLI pergunta se é para criar um projeto novo ou ligar a um existente.
+
+| Variável | Para quê | Obrigatória |
+|---|---|---|
+| `ADMIN_PASSWORD` | Senha para baixar a lista em `/admin/interessados.csv`. Sem ela, a exportação fica desligada. | Recomendada |
+| `RESEND_API_KEY`, `LEADS_FROM`, `LEADS_NOTIFY_TO` | Aviso por e-mail a cada novo cadastro, como no Railway. | Não |
+
+No plano gratuito do Netlify, os vídeos (cerca de 5 MB) contam na banda mensal.
+
+Para testar localmente com o CLI dentro do Docker, rode com `NODE_OPTIONS=--dns-result-order=ipv4first`. Sem isso, as funções respondem `ECONNREFUSED`.
+
 ## Publicar no Railway
 
 1. Crie um serviço a partir deste repositório.

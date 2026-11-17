@@ -24,6 +24,10 @@ site.html
 # gravador das demos: usa sessões de empresas reais, fica só na máquina de quem grava
 scripts/demo-videos/
 
+# build e estado local do Netlify
+dist-netlify/
+.netlify/
+
 # logs, temporários e pacotes
 *.log
 *.tmp

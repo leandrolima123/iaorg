@@ -1,0 +1,59 @@
+# Landing do IAORG no Netlify (só o site público com a lista de interesse; o app roda em Docker).
+# Passo a passo em site/LEIAME.md.
+
+[build]
+  command = "node site/netlify-build.mjs"
+  publish = "dist-netlify"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+
+# endereços antigos e alternativos
+[[redirects]]
+  from = "/site"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/landing.html"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/privacy"
+  to = "/privacidade"
+  status = 301
+
+[[redirects]]
+  from = "/terms"
+  to = "/termos"
+  status = 301
+
+[[redirects]]
+  from = "/favicon.ico"
+  to = "/brand/iaorg-mark.svg"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com; media-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; connect-src 'self' blob: data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
