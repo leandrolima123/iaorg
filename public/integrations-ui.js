@@ -259,6 +259,24 @@ export async function renderIntegrations(root, ctx) {
           ${isAdmin ? '<div><button class="btn small primary">Salvar limites</button></div>' : ''}
         </form></div>`;
     }
+    if (c.editable) {
+      const cfg = conn.config || {};
+      const fields = (c.configFields || []).map((f) => (f.key === 'profile' && (cfg.profiles || []).length
+        ? `<label class="field"><span>Perfil do Upload-Post</span><select name="profile" ${isAdmin ? '' : 'disabled'}>${cfg.profiles.map((p) => `<option value="${esc(p.username)}" ${p.username === (cfg.profile || cfg.profiles[0].username) ? 'selected' : ''}>${esc(p.name || p.username)}</option>`).join('')}</select></label>`
+        : f.key === 'model' && (cfg.models || []).length
+        ? `<label class="field"><span>Modelo</span><select name="model" ${isAdmin ? '' : 'disabled'}><option value="">Automático (${esc(cfg.autoModel || '')})</option>${cfg.models.map((m) => `<option value="${esc(m)}" ${m === cfg.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>`
+        : f.options
+        ? `<label class="field"><span>${esc(f.label)}</span><select name="${f.key}" ${isAdmin ? '' : 'disabled'}>${f.options.map((o) => `<option value="${esc(o.value)}" ${String(cfg[f.key] ?? f.options[0].value) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>`
+        : `<label class="field"><span>${esc(f.label)}</span><input name="${f.key}" value="${esc(cfg[f.key] ?? '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false" ${isAdmin ? '' : 'disabled'}></label>`)).join('');
+      const nets = c.type === 'uploadpost' ? (() => {
+        const p = (cfg.profiles || []).find((x) => x.username === cfg.profile) || (cfg.profiles || [])[0];
+        const acc = Object.entries(p?.accounts || {});
+        return `<p class="hint">${acc.length ? `Redes conectadas neste perfil: ${acc.map(([k, a]) => `<b>${esc(k)}</b>${a.name ? ` (${esc(a.name)})` : ''}${a.reauth ? ' <span class="badge err">reconectar</span>' : ''}`).join(', ')}` : 'Nenhuma rede conectada neste perfil ainda: conecte em app.upload-post.com e clique em Salvar para atualizar.'}</p>
+          <p class="hint">${cfg.mode === 'auto' ? 'Os agentes publicam direto.' : 'Cada post e resposta vai para <b>Minha mesa → Aprovações</b>, com a prévia das imagens; você pode editar o texto antes de aprovar.'}</p>`;
+      })() : `<p class="hint">Os agentes com acesso ganham a ferramenta de criar imagens; cada imagem vai para <b>Arquivos</b> (Marketing/Imagens). O custo de cada imagem é cobrado na sua conta do provedor.</p>`;
+      return `<form class="integ-config integ-form" data-generic-config>${nets}${fields}
+        ${isAdmin ? `<div><button class="btn small">${ic('refresh-cw', 'sm')}Salvar e atualizar</button></div>` : ''}</form>`;
+    }
     if (c.type === 'resend') {
       return `<form class="integ-config integ-form" data-resend-config>
         <label class="field"><span>Remetente das respostas</span><input name="from" value="${esc(conn.config.from || '')}" placeholder="Suporte <suporte@seudominio.com>" ${isAdmin ? '' : 'disabled'}></label>
@@ -325,6 +343,13 @@ export async function renderIntegrations(root, ctx) {
           ${s.proposals.map((p) => `<tr><td><code>${esc(p.id)}</code><small>${new Date(p.ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></td><td>${esc(p.par)}</td><td class="num">${n(p.valor)}</td><td class="num">${n(p.risco)}</td><td>${esc(ST[p.status] || p.status)}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhuma proposta ainda.</p>'}`;
     } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
   });
+
+  $$('[data-generic-config]', root).forEach((form) => form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const type = form.closest('[data-type]').dataset.type;
+    const btn = $('button', form); if (btn) btn.disabled = true;
+    try { await api('PUT', `/api/integrations/${type}/config`, Object.fromEntries(new FormData(form))); await after('Configuração salva'); } catch (err) { toast(err.message, 'err'); if (btn) btn.disabled = false; }
+  }));
 
   $$('[data-resend-config]', root).forEach((form) => form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -456,7 +481,7 @@ export async function renderIntegrations(root, ctx) {
 }
 
 // Resumo de acessos de um agente (para o editor da equipe).
-export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance', telegram: 'Telegram' };
+export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance', telegram: 'Telegram', uploadpost: 'Redes sociais', openai_images: 'Imagens (OpenAI)', gemini_images: 'Imagens (Gemini)' };
 export function accessChips(agent, integrations, catalogNames = INTEGRATION_NAMES) {
   const list = Object.entries(agent.access || {}).filter(([t]) => integrations?.some((i) => i.type === t));
   return list.length ? list.map(([t, a]) => `<span class="badge">${esc(catalogNames[t] || t)} · ${a.perms.length} permiss${a.perms.length > 1 ? 'ões' : 'ão'}</span>`).join(' ') : '<span class="hint">Nenhum acesso a sistemas externos.</span>';

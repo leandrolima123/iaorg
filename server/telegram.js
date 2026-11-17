@@ -165,8 +165,8 @@ async function sweep(store) {
       // ações de agentes esperando aprovação (e-mail, chat, WhatsApp, anúncios, ordens…): administradores
       if (p.clientApprovals && isAdminM(me)) for (const a of (s.approvals || []).filter((x) => x.status === 'pending')) {
         if (!fresh(`c:${a.id}`, a.ts)) continue;
-        const ch = { email: 'E-mail', chat: 'Chat do site', whatsapp: 'WhatsApp', ads: 'Google Ads', trade: 'Ordem na Binance' }[a.channel] || 'Ação';
-        out.push({ key: `c:${a.id}`, text: `✉️ <b>${h(ch)} esperando aprovação</b> · ${h(name(a.agentId))}${a.preview?.para ? `\nPara: ${h(a.preview.para)}` : ''}${a.preview?.assunto ? `\nAssunto: ${h(a.preview.assunto)}` : ''}\n\n${h(cut(a.text, 2500))}\n\n<i>Para descartar com orientação ao agente, responda esta mensagem.</i>`, buttons: [[{ text: '✅ Aprovar e enviar', callback_data: `ca|${a.id}|ok` }, { text: '🗑 Descartar', callback_data: `ca|${a.id}|no` }]], reply: { kind: 'clientApproval', approvalId: a.id } });
+        const ch = { email: 'E-mail', chat: 'Chat do site', whatsapp: 'WhatsApp', ads: 'Google Ads', trade: 'Ordem na Binance', social: a.tool === 'social_responder' ? 'Resposta nas redes sociais' : 'Post nas redes sociais' }[a.channel] || 'Ação';
+        out.push({ key: `c:${a.id}`, text: `✉️ <b>${h(ch)} esperando aprovação</b> · ${h(name(a.agentId))}${a.preview?.para ? `\nPara: ${h(a.preview.para)}` : ''}${a.preview?.assunto ? `\nAssunto: ${h(a.preview.assunto)}` : ''}${a.preview?.imagens?.length ? `\nImagens: ${a.preview.imagens.map((p) => `<code>${h(p)}</code>`).join(', ')} (veja em Minha mesa)` : ''}\n\n${h(cut(a.text, 2500))}\n\n<i>Para descartar com orientação ao agente, responda esta mensagem.</i>`, buttons: [[{ text: '✅ Aprovar e enviar', callback_data: `ca|${a.id}|ok` }, { text: '🗑 Descartar', callback_data: `ca|${a.id}|no` }]], reply: { kind: 'clientApproval', approvalId: a.id } });
       }
       for (const o of out.slice(0, 15)) { // no máximo 15 por rodada: o resto vai na próxima
         markSent(link, o.key);

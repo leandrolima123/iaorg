@@ -196,7 +196,7 @@ http.createServer(async (req, res) => {
     if (cb && req.method === 'POST') {
       const job = jobs.get(cb[1]);
       if (!job || !safeEq(req.headers['x-job-token'] || '', job.token)) return send(res, 403, { error: 'job inválido' });
-      return send(res, 200, await toApp(`/api/workbench/tool/${job.id}`, await body(req, 2 * 1024 * 1024)));
+      return send(res, 200, await toApp(`/api/workbench/tool/${job.id}`, await body(req, 40 * 1024 * 1024)));
     }
 
     if (!safeEq(String(req.headers.authorization || ''), `Bearer ${TOKEN}`)) return send(res, 401, { error: 'não autorizado' });
