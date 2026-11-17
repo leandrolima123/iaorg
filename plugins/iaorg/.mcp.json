@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "iaorg": {
+      "type": "http",
+      "url": "${user_config.iaorg_url}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${user_config.iaorg_token}"
+      }
+    }
+  }
+}

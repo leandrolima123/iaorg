@@ -83,7 +83,9 @@ export async function renderIntegrations(root, ctx) {
         <div class="integ-body">
           <p class="hint">${esc(c.description)}</p>
           ${conn.error ? `<p class="error">${esc(conn.error)}</p>` : ''}
-          <p class="hint">Vale para a empresa toda: não precisa dar acesso por agente. Veja o estado do espelho e sincronize na aba <b>Arquivos</b>.</p>
+          ${c.type === 'telegram' ? `<p class="hint">Bot <b>${esc(conn.account || '')}</b>. Cada pessoa vincula o próprio Telegram em <b>Minha mesa → Telegram</b> e escolhe o que recebe.</p>
+            <p class="hint">${(conn.people || []).length ? `Vinculados: ${conn.people.map((p) => `<b>${esc(p.name)}</b>${p.user ? ` (${esc(p.user)})` : ''}`).join(', ')}` : 'Ninguém vinculou ainda.'}</p>`
+            : '<p class="hint">Vale para a empresa toda: não precisa dar acesso por agente. Veja o estado do espelho e sincronize na aba <b>Arquivos</b>.</p>'}
           ${isOwner ? `<div class="row integ-foot"><button type="button" class="btn small ghost" data-disconnect>${ic('unplug', 'sm')}Desconectar</button></div>` : ''}
         </div></details>`;
     }
@@ -454,7 +456,7 @@ export async function renderIntegrations(root, ctx) {
 }
 
 // Resumo de acessos de um agente (para o editor da equipe).
-export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance' };
+export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance', telegram: 'Telegram' };
 export function accessChips(agent, integrations, catalogNames = INTEGRATION_NAMES) {
   const list = Object.entries(agent.access || {}).filter(([t]) => integrations?.some((i) => i.type === t));
   return list.length ? list.map(([t, a]) => `<span class="badge">${esc(catalogNames[t] || t)} · ${a.perms.length} permiss${a.perms.length > 1 ? 'ões' : 'ão'}</span>`).join(' ') : '<span class="hint">Nenhum acesso a sistemas externos.</span>';

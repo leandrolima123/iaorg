@@ -1,0 +1,89 @@
+/* Páginas públicas do IAORG (landing, privacidade, termos). Independente do style.css do app. */
+@font-face { font-family: 'Archivo'; font-weight: 400; font-display: swap; src: url('/vendor/fonts/archivo/archivo-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo'; font-weight: 500; font-display: swap; src: url('/vendor/fonts/archivo/archivo-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo'; font-weight: 600; font-display: swap; src: url('/vendor/fonts/archivo/archivo-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo'; font-weight: 700; font-display: swap; src: url('/vendor/fonts/archivo/archivo-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 700; font-display: swap; src: url('/vendor/fonts/barlow-condensed/barlow-condensed-latin-700-normal.woff2') format('woff2'); }
+
+:root {
+  --bg: #0a0a0b;
+  --bg-2: #111112;
+  --card: #161617;
+  --card-2: #1d1d1f;
+  --line: rgba(255, 255, 255, .09);
+  --line-2: rgba(255, 255, 255, .16);
+  --text: #f5f5f2;
+  --soft: #c9c8c2;
+  --muted: #8f8e88;
+  --sign: #f2c200;
+  --sign-ink: #1c1d1c;
+  --ok: #4cc38a;
+  --font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sign: 'Barlow Condensed', 'Archivo', sans-serif;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --gutter: clamp(16px, 4vw, 40px);
+  --max: 1160px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 1rem/1.55 var(--font); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+a { color: inherit; }
+img { max-width: 100%; }
+.wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+:focus-visible { outline: 2px solid var(--sign); outline-offset: 3px; border-radius: 6px; }
+
+/* Barra de navegação: camada translúcida, o conteúdo rola por baixo */
+.nav { position: fixed; inset: 0 0 auto 0; z-index: 50; background: rgba(10, 10, 11, .62); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 28px; height: 56px; }
+.logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font: 700 1.25rem/1 var(--font-sign); letter-spacing: .06em; }
+.logo img { width: 26px; height: 26px; border-radius: 6px; display: block; }
+.nav-links { display: flex; gap: 24px; margin-left: auto; }
+.nav-links a { text-decoration: none; color: var(--soft); font-size: .875rem; font-weight: 500; transition: color .15s; }
+.nav-links a:hover { color: var(--text); }
+.nav-cta { display: flex; gap: 8px; }
+@media (max-width: 820px) { .nav-links { display: none; } .nav-cta { margin-left: auto; } }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .04); color: var(--text); font: 600 .9375rem/1 var(--font); text-decoration: none; cursor: pointer; white-space: nowrap; transition: transform .1s ease-out, background .15s, border-color .15s; }
+.btn:hover { background: rgba(255, 255, 255, .09); }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--sign); border-color: var(--sign); color: var(--sign-ink); }
+.btn.primary:hover { background: #ffd21a; }
+.btn.sm { height: 34px; padding: 0 16px; font-size: .8125rem; }
+.btn.lg { height: 52px; padding: 0 30px; font-size: 1rem; }
+
+.footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--muted); font-size: .8125rem; }
+.footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; }
+.footer nav { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-left: auto; }
+.footer a { color: var(--soft); text-decoration: none; }
+.footer a:hover { color: var(--text); text-decoration: underline; }
+.footer .credit { flex-basis: 100%; margin: 0; }
+
+/* Páginas legais */
+.legal { padding: 120px 0 80px; }
+.legal .wrap { max-width: 780px; }
+.legal .eyebrow { font: 700 .875rem/1 var(--font-sign); letter-spacing: .14em; text-transform: uppercase; color: var(--sign); margin: 0 0 14px; }
+.legal h1 { font: 700 clamp(2rem, 5vw, 3rem)/1.08 var(--font); letter-spacing: -.025em; margin: 0 0 12px; }
+.legal .updated { color: var(--muted); font-size: .875rem; margin: 0 0 32px; }
+.legal .summary { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px 24px; margin: 0 0 40px; }
+.legal .summary h2 { margin: 0 0 8px; font-size: 1rem; }
+.legal .summary ul { margin: 0; }
+.legal h2 { font: 600 1.375rem/1.25 var(--font); letter-spacing: -.01em; margin: 44px 0 12px; scroll-margin-top: 80px; }
+.legal h3 { font: 600 1rem/1.4 var(--font); margin: 24px 0 6px; }
+.legal p, .legal li { color: var(--soft); }
+.legal ul { padding-left: 20px; }
+.legal li { margin: 6px 0; }
+.legal a { color: var(--text); text-underline-offset: 3px; }
+.legal strong { color: var(--text); font-weight: 600; }
+.legal .fill { background: rgba(242, 194, 0, .16); color: var(--sign); border-radius: 4px; padding: 0 5px; font-weight: 600; }
+.legal .table { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 14px; }
+.legal table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .9rem; }
+.legal th, .legal td { text-align: left; vertical-align: top; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--soft); }
+.legal th { color: var(--text); font-weight: 600; background: var(--card); }
+.legal tr:last-child td { border-bottom: 0; }
+
+/* Modo da página: "app" (servida pelo app, com login) ou "waitlist" (site público com lista de interesse) */
+[data-mode="waitlist"] .only-app, [data-mode="app"] .only-waitlist { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media (prefers-reduced-transparency: reduce) { .nav { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }

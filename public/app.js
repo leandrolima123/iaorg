@@ -9,6 +9,7 @@ import { renderRoutinesPanel, routinesEditing } from './routines-ui.js';
 import { renderDashboardPanel } from './dashboard-ui.js';
 import { renderTradingPanel } from './trading-ui.js';
 import { renderFunctionPanel, renderFunctionHire } from './functions-ui.js';
+import { renderMyTelegram, telegramOpen, toggleTelegram } from './telegram-ui.js';
 import { renderBrandPanel } from './brand-ui.js';
 
 const hhmm = (ts) => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -171,6 +172,9 @@ function connect() {
         if (cardAgent) renderCard();
         break;
       case 'notify': if (msg.to === S.me?.id) toast(msg.text); break;
+      case 'function': // uma função rodou: atualiza o log dela se estiver aberto
+        if (tab === 'activity' && msg.id === currentLogAgent() && !isEditing($('#panel-activity'))) { clearTimeout(logTimer); logTimer = setTimeout(renderActivity, 800); }
+        break;
       case 'usage': S.usage = msg.usage; if (tab === 'settings' && !isEditing($('#panel-settings'))) renderSettings(); break;
       case 'files': if (tab === 'files' && !isEditing($('#panel-files'))) renderFiles(); break;
       case 'routines':
@@ -716,7 +720,8 @@ async function renderDesk() {
   const sec = (id, title, count, hint, body, cls = '') => `<section class="mesa-sec ${cls}" id="${id}">
     <header class="mesa-sec-head"><h3>${title}</h3>${count != null ? `<span class="mesa-count num">${count}</span>` : ''}${hint ? `<p class="hint">${hint}</p>` : ''}</header>${body}</section>`;
   panel.innerHTML = head('Minha mesa', waiting ? `${waiting} ${waiting === 1 ? 'item espera' : 'itens esperam'} por você.` : 'Nada esperando por você agora.',
-    `<label class="btn small mesa-upload">${ic('upload', 'sm')}Enviar arquivo<input type="file" id="upFile" class="sr-only"></label>`) + `
+    `<div class="row"><button type="button" class="btn small ${telegramOpen() ? 'on' : ''}" id="tgToggle" aria-expanded="${telegramOpen()}">${ic('send', 'sm')}Telegram</button><label class="btn small mesa-upload">${ic('upload', 'sm')}Enviar arquivo<input type="file" id="upFile" class="sr-only"></label></div>`) + `
+    ${telegramOpen() ? sec('m-telegram', 'Minha mesa no Telegram', null, 'Receba e responda pelo celular. O que chega é escolha sua.', '<div id="tgRoot"></div>', 'tg-sec') : ''}
     ${queue.length
       ? `<nav class="mesa-queue" aria-label="O que espera por você">${queue.map(([id, label, n], i) => `<button type="button" data-jump="${id}" class="${i === 0 ? 'first' : ''}"><b class="num">${n}</b><span>${label}</span></button>`).join('')}</nav>`
       : `<div class="mesa-clear">${ic('check', 'sm')}<span><b>Mesa limpa.</b> Quando um agente pedir algo, entregar um trabalho ou mandar mensagem, aparece aqui. Para começar algo novo, dê uma ordem na barra abaixo.</span></div>`}
@@ -735,6 +740,8 @@ async function renderDesk() {
   bindReview(panel);
   bindJobActions(panel);
   bindApprovals(panel);
+  $('#tgToggle', panel).onclick = () => { toggleTelegram(); renderDesk(); };
+  if ($('#tgRoot', panel)) renderMyTelegram($('#tgRoot', panel), { isOwner: S.me?.appRole === 'owner', goIntegrations: () => setTab('integrations') });
   $$('.review-list .task-res', panel).forEach((el) => { el.onclick = () => el.classList.toggle('open'); });
   $$('[data-open-file]', panel).forEach((b) => b.onclick = () => { focusFile(b.dataset.openFile); setTab('files'); });
   $$('[data-dismiss]', panel).forEach((b) => b.onclick = async () => {
@@ -937,7 +944,9 @@ function renderRoutines() {
 function renderActivity() {
   const panel = $('#panel-activity');
   if (!$('#lgRoot', panel)) panel.innerHTML = head('Atividade', 'O log completo de cada agente: mensagens, tarefas, ferramentas usadas, passos na oficina, arquivos e erros.') + '<div id="lgRoot"></div>';
-  renderActivityPanel($('#lgRoot', panel), uiCtx());
+  // na Atividade as funções aparecem também (o log das execuções delas), depois das pessoas e agentes
+  const kindOrder = (a) => (a.kind === 'human' ? 2 : a.kind === 'function' ? 1 : 0);
+  renderActivityPanel($('#lgRoot', panel), { ...uiCtx(), agents: () => S.agents.slice().sort((a, b) => kindOrder(a) - kindOrder(b) || a.name.localeCompare(b.name, 'pt-BR')) });
 }
 
 // ---------------- arquivos ----------------
@@ -1236,9 +1245,12 @@ async function renderMcpAccess(created) {
   const member = (id) => S.agents.find((a) => a.id === id)?.name || id;
   const when = (t) => (t ? new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca');
   const cmd = (tok) => `claude mcp add --transport http iaorg ${d.mcpUrl} --header "Authorization: Bearer ${tok}"`;
+  // plugin do Claude Code (MCP + skills): o token vai para o cofre de credenciais do sistema
+  const plugin = (tok) => `claude plugin marketplace add leandrolima123/iaorg && claude plugin install iaorg@iaorg --config iaorg_url=${d.mcpUrl.replace(/\/mcp$/, '')} --config iaorg_token=${tok}`;
   root.innerHTML = `
     ${fresh ? `<div class="mcp-fresh"><p><b>Token criado. Copie agora: ele não aparece de novo.</b></p>
-      <label class="field"><span>Claude Code (terminal)</span><div class="row"><input readonly class="mono" value="${esc(cmd(fresh))}" id="mcpCmd"><button type="button" class="btn small" data-copy="mcpCmd">${ic('copy', 'sm')}Copiar</button></div></label>
+      <label class="field"><span>Plugin do Claude Code (recomendado: traz as skills e guarda o token no cofre do sistema)</span><div class="row"><input readonly class="mono" value="${esc(plugin(fresh))}" id="mcpPlugin"><button type="button" class="btn small" data-copy="mcpPlugin">${ic('copy', 'sm')}Copiar</button></div></label>
+      <label class="field"><span>Claude Code, só a conexão MCP (sem o plugin)</span><div class="row"><input readonly class="mono" value="${esc(cmd(fresh))}" id="mcpCmd"><button type="button" class="btn small" data-copy="mcpCmd">${ic('copy', 'sm')}Copiar</button></div></label>
       <label class="field"><span>Outras ferramentas: URL <code>${esc(d.mcpUrl)}</code> e cabeçalho Authorization</span><div class="row"><input readonly class="mono" value="Bearer ${esc(fresh)}" id="mcpTok"><button type="button" class="btn small" data-copy="mcpTok">${ic('copy', 'sm')}Copiar</button></div></label>
       <div><button type="button" class="btn small" id="mcpDone">${ic('check', 'sm')}Já copiei</button></div></div>` : ''}
     <form class="row mcp-form" id="mcpForm">

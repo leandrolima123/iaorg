@@ -14,6 +14,7 @@ import { uid } from './companies.js';
 import { renderEmail } from './brand.js';
 import * as desk from './trading.js';
 import * as bn from './binance.js';
+import * as telegram from './telegram.js';
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const POLL_MS = +process.env.INBOX_POLL_SECONDS * 1000 || 60000;
@@ -86,6 +87,15 @@ export const CATALOG = [
     ],
     perms: [{ id: 'read', label: 'Ler conversas' }, { id: 'reply', label: 'Responder e anotar' }, { id: 'resolve', label: 'Resolver conversas' }],
     suggest: ['cs', 'vendas'],
+  },
+  {
+    type: 'telegram', name: 'Telegram', category: 'Mensagens', icon: 'send', auth: 'token', status: 'available', companyWide: true,
+    description: 'A Minha mesa de cada pessoa no Telegram: mensagens e perguntas dos agentes, tarefas, pedidos para aprovar, revisões, entregas e avisos. Pelo Telegram dá para responder aos agentes, dar ordens, aprovar e concluir com um toque.',
+    tokenLabel: 'Token do bot do Telegram', tokenPlaceholder: '123456789:ABC…',
+    tokenHelp: 'No Telegram, converse com o @BotFather, mande /newbot, escolha um nome e um usuário terminado em "bot" e copie o token. Use um bot só para esta empresa. Depois de conectar, cada pessoa vincula o próprio Telegram em Minha mesa.',
+    tokenUrl: 'https://t.me/BotFather',
+    perms: [],
+    suggest: [],
   },
   { type: 'slack', name: 'Slack', category: 'Mensagens', icon: 'message-square', status: 'soon', description: 'Agentes leem e respondem em canais escolhidos.' },
   {
@@ -245,6 +255,7 @@ export function publicState(store) {
     return {
       type: c.type, account: i.account || '', connectedAt: i.connectedAt, config: i.config || {}, error: i.error || '',
       agents: store.state.agents.filter((a) => a.access?.[c.type]).map((a) => ({ id: a.id, perms: a.access[c.type].perms, resources: a.access[c.type].resources })),
+      ...(c.type === 'telegram' ? { people: telegram.linkedPeople(store) } : {}),
     };
   });
 }
@@ -945,6 +956,12 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
         config.numbers = v.numbers.map(({ id, display, name }) => ({ id, display, name })).slice(0, 20);
         account = [v.number.display, v.number.name].filter(Boolean).join(' · ');
       }
+      if (def.type === 'telegram') {
+        const v = await telegram.verify(secret);
+        config.botUsername = v.username;
+        config.botId = v.id;
+        account = `@${v.username}`;
+      }
       if (def.type === 'binance') {
         const d = desk.deskConfig(config);
         // trocar de ambiente exige a chave daquele ambiente (testnet e produção têm chaves diferentes)
@@ -961,6 +978,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     } catch (e) { return bad(res, `Não foi possível conectar: ${e.message}`); }
     ensure(store)[def.type] = { connected: true, secret: encrypt(secret), account, config, connectedAt: prev?.connectedAt || Date.now(), seen: prev?.seen };
     store.save();
+    if (def.type === 'telegram') telegram.onConnect(store, config.botId);
     runtimeFor(store).logEvent('system', req.member.id, `${def.name} conectado${account ? ` (${account})` : ''}.`);
     refresh(store);
     res.json({ ok: true, account });
@@ -1082,6 +1100,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     delete ensure(store)[def.type];
     for (const a of store.state.agents) if (a.access?.[def.type]) delete a.access[def.type];
     store.save();
+    if (def.type === 'telegram') telegram.onDisconnect(store);
     runtimeFor(store).logEvent('system', req.member.id, `${def.name} desconectado. Os acessos dos agentes foram removidos.`);
     refresh(store);
     res.json({ ok: true });

@@ -1,0 +1,89 @@
+{
+  "_como_usar": "Cada item vira um cartão no carrossel de demos. Para publicar um vídeo: coloque o arquivo .mp4 nesta pasta e preencha 'src' (ex.: '/videos/ordem.mp4') e, se quiser, 'poster' (imagem .jpg/.webp; as capas ficam em /videos/capas e são geradas por scripts/capas/gerar.mjs) e 'legendas' (.vtt). Para usar o YouTube, preencha 'youtube' com o código do vídeo (ex.: 'dQw4w9WgXcQ'); ele só carrega quando a pessoa clica. Sem 'src' nem 'youtube', o cartão aparece como 'Em breve'. Ícones: order, mail, git, team, radar, phone.",
+  "demos": [
+    {
+      "id": "escritorio",
+      "titulo": "O escritório 3D",
+      "descricao": "Gire, aproxime e veja quem está fazendo o quê.",
+      "duracao": "0:22",
+      "icone": "team",
+      "cor": "#f2c200",
+      "src": "/videos/escritorio.mp4",
+      "youtube": "",
+      "poster": "/videos/capas/escritorio.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "ordem",
+      "titulo": "Da ordem à entrega",
+      "descricao": "Uma ordem vira plano, tarefas e trabalho pronto.",
+      "duracao": "0:50",
+      "icone": "order",
+      "cor": "#fb923c",
+      "src": "/videos/ordem.mp4",
+      "youtube": "",
+      "poster": "/videos/capas/ordem.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "equipe",
+      "titulo": "Agentes com ficha",
+      "descricao": "Instruções, procedimentos, modelo e histórico de cada agente.",
+      "duracao": "0:30",
+      "icone": "team",
+      "cor": "#e879f9",
+      "src": "/videos/equipe.mp4",
+      "youtube": "",
+      "poster": "/videos/capas/equipe.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "vigia",
+      "titulo": "Funções que vigiam por você",
+      "descricao": "Automação sem IA que só chama a equipe quando precisa.",
+      "duracao": "0:28",
+      "icone": "radar",
+      "cor": "#2dd4bf",
+      "src": "/videos/vigia.mp4",
+      "youtube": "",
+      "poster": "/videos/capas/vigia.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "mesa",
+      "titulo": "Sua mesa de trabalho",
+      "descricao": "Aprovações, perguntas e entregas num lugar só.",
+      "duracao": "0:22",
+      "icone": "phone",
+      "cor": "#38bdf8",
+      "src": "/videos/mesa.mp4",
+      "youtube": "",
+      "poster": "/videos/capas/mesa.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "atendimento",
+      "titulo": "Atendimento com aprovação",
+      "descricao": "O agente responde o cliente; você aprova antes de sair.",
+      "duracao": "",
+      "icone": "mail",
+      "cor": "#4ade80",
+      "src": "",
+      "youtube": "",
+      "poster": "/videos/capas/atendimento.jpg",
+      "legendas": ""
+    },
+    {
+      "id": "dev",
+      "titulo": "Dev que abre PR testado",
+      "descricao": "Branch, testes, PR e CI, sem tocar na main.",
+      "duracao": "",
+      "icone": "git",
+      "cor": "#60a5fa",
+      "src": "",
+      "youtube": "",
+      "poster": "/videos/capas/dev.jpg",
+      "legendas": ""
+    }
+  ]
+}

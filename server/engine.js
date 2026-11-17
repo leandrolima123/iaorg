@@ -29,6 +29,8 @@ import { knowledgeMode, documentsBlock, search as kbSearch } from './knowledge.j
 const MAX_CONCURRENCY = +process.env.MAX_CONCURRENT_AGENTS || 3;
 const GLOBAL_MAX = +process.env.GLOBAL_MAX_CONCURRENT_AGENTS || 12;
 const MAX_STEPS = +process.env.AGENT_MAX_STEPS || 10;
+// Quem mais quer ouvir os avisos do escritório (ex.: Telegram). Cada função recebe (runtime, msg).
+export const emitHooks = [];
 const TICK_MS = 1500;
 // Corta no fim de uma palavra (nunca "sessão de a") e marca com "…" quando cortou.
 const cutWords = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); if (t.length <= n) return t; const c = t.slice(0, n); const i = c.lastIndexOf(' '); return `${(i > n * 0.6 ? c.slice(0, i) : c).replace(/[\s,;:.–-]+$/, '')}…`; };
@@ -145,7 +147,10 @@ export class CompanyRuntime {
   }
 
   get s() { return this.store.state; }
-  emit(msg) { hub.broadcast(this.store.id, msg); }
+  emit(msg) {
+    hub.broadcast(this.store.id, msg);
+    for (const fn of emitHooks) { try { fn(this, msg); } catch (e) { console.error('[emit]', e.message); } }
+  }
   isHuman(id) { return this.store.getAgent(id)?.kind === 'human'; }
   nameOf(id) {
     if (id === 'board') return this.store.owner()?.name || 'Dono';

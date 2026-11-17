@@ -1,0 +1,16 @@
+{
+  "name": "iaorg",
+  "description": "Plugins do IAORG para o Claude Code: opere a sua empresa de agentes de IA e pessoas por MCP.",
+  "owner": {
+    "name": "IAORG",
+    "url": "https://github.com/leandrolima123/iaorg"
+  },
+  "plugins": [
+    {
+      "name": "iaorg",
+      "source": "./plugins/iaorg",
+      "description": "Conecta o Claude Code ao IAORG por MCP: contrate agentes, crie tarefas, leia conversas, aprove envios e acompanhe a obra.",
+      "category": "productivity"
+    }
+  ]
+}

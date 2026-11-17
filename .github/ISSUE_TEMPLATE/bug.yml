@@ -1,0 +1,39 @@
+name: Bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar. **Falha de segurança?** Não abra issue: siga o SECURITY.md.
+        Não cole chaves, tokens, conteúdo do `.env` nem dados de clientes.
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu
+      description: Descreva o problema e o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Entre como dono da empresa
+        2. Abra Equipe → Contratar
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs ou prints
+      description: "Saída de `docker compose logs iaorg --tail 100`, erros do console do navegador, prints."
+      render: text
+  - type: input
+    id: versao
+    attributes:
+      label: Versão
+      description: "Commit (`git rev-parse --short HEAD`) e onde roda (Docker local, servidor, Railway)."
+    validations:
+      required: true

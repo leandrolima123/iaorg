@@ -5,6 +5,7 @@
 // (valida a configuração), schedule (de quanto em quanto tempo roda) e run (o que faz).
 import { watchDesk, isConnected, can } from './integrations.js';
 import { watchConfig, WATCH_DEFAULTS } from './trading.js';
+import { logActivity } from './activity.js';
 
 const agentOptions = (store, { integration, perm } = {}) => store.aiAgents()
   .filter((a) => a.active !== false && (!integration || can(store, a, integration, perm)))
@@ -101,6 +102,7 @@ export function mountFunctions(app, { requireCompany, need, wrap, runtimeFor, re
     };
     store.state.agents.push(m);
     store.save();
+    logActivity(store, m.id, { type: 'system', text: `Contratado(a) por ${req.member.name} como ${def.title}.` });
     runtimeFor(store).logEvent('system', req.member.id, `${req.member.name} contratou ${m.name} (${def.title}, função automática).`);
     refresh(store);
     res.json(view(store, m));
@@ -112,9 +114,17 @@ export function mountFunctions(app, { requireCompany, need, wrap, runtimeFor, re
     if (!m) return bad(res, 'Função não encontrada', 404);
     const def = defOf(m);
     m.fn ||= {};
-    if (req.body?.config && def) m.fn.config = def.normalize({ ...m.fn.config, ...req.body.config });
+    if (req.body?.config && def) {
+      const before = def.normalize(m.fn.config);
+      m.fn.config = def.normalize({ ...m.fn.config, ...req.body.config });
+      const fields = def.fields(store);
+      const show = (f, v) => f.options?.find((o) => String(o.value) === String(v))?.label ?? v;
+      const diff = fields.filter((f) => String(before[f.key]) !== String(m.fn.config[f.key])).map((f) => `${f.label}: ${show(f, before[f.key])} → ${show(f, m.fn.config[f.key])}`);
+      if (diff.length) logActivity(store, m.id, { type: 'system', text: `${req.member.name} mudou a configuração: ${diff.join('; ')}` });
+    }
     if (req.body?.enabled !== undefined) {
       m.fn.enabled = !!req.body.enabled;
+      logActivity(store, m.id, { type: 'system', text: `${req.member.name} ${m.fn.enabled ? 'ativou' : 'pausou'} a função.` });
       runtimeFor(store).logEvent('system', req.member.id, `${req.member.name} ${m.fn.enabled ? 'ativou' : 'pausou'} ${m.name} (${def?.title || 'função'}).`);
       if (!m.fn.enabled) runtimeFor(store).setStatus(m.id, { status: 'idle', bubble: '' });
     }

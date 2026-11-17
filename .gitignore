@@ -16,6 +16,14 @@ keycloak/dev-test-users.md
 .claude/agents/
 .claude/settings.local.json
 
+# rascunhos e materiais locais que não fazem parte do projeto
+site.html
+.impeccable/questions/
+.impeccable/mocks/
+.impeccable/review/
+# gravador das demos: usa sessões de empresas reais, fica só na máquina de quem grava
+scripts/demo-videos/
+
 # logs, temporários e pacotes
 *.log
 *.tmp

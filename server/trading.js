@@ -8,6 +8,8 @@
 // na proposta, no parecer e de novo na hora da execução. O botão "Parar a mesa" bloqueia compras na hora.
 import * as bn from './binance.js';
 import { uid } from './companies.js';
+import { logActivity } from './activity.js';
+import { deskNews, newsLine } from './news.js';
 
 const TZ = process.env.COMPANY_TZ || 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
@@ -69,6 +71,9 @@ export function deskTools(has) {
         par: S('Par, ex.: BTCUSDT'), intervalo: { type: 'string', enum: ['15m', '1h', '4h', '1d'], description: 'Padrão: 1h' }, velas: N('Quantas velas recentes mostrar (0 a 50; padrão 0)'),
       }, ['par']),
       T('mesa_varredura', 'Varredura de TODOS os pares permitidos numa chamada só: tendência no 1d e no 4h, indicadores do 1h, suporte, resistência, stop sugerido, ganho/risco até a resistência, valor máximo pelos limites e os filtros já calculados (dados, tendência, esticado, ganho/risco). Marca os pares que já têm posição ou proposta em andamento. Comece toda análise por aqui; use mesa_mercado só para ver as velas de um par específico.'),
+      T('mesa_noticias', 'Contexto de notícias para a mesa: eventos econômicos de alto impacto nas próximas 24 h (juros, inflação, emprego), manchetes de alerta das últimas horas (ataques, suspensões de saque, processos, quedas fortes) e manchetes sobre os pares da mesa. Só títulos, fonte, horário e link. Consulte antes de propor: notícia pode fazer desistir de uma entrada; sozinha, nunca justifica uma compra.', {
+        par: S('Opcional: um par, para ver só as manchetes dele (ex.: SOLUSDT)'), horas: N('Janela das manchetes em horas (1 a 48; padrão 12)'),
+      }),
       T('mesa_livro', 'Livro de ofertas de um par (melhores compras e vendas) para avaliar liquidez e spread.', { par: S('Par, ex.: BTCUSDT') }, ['par']),
       T('mesa_conta', 'Situação da mesa: saldos (com valor em USDT), patrimônio, resultado do dia, posições, ordens abertas, limites e quanto já foi usado, se a mesa está parada.'),
       T('mesa_resultado', 'Resultado da mesa num período, calculado das execuções reais na Binance: lucro realizado e em aberto, operações encerradas, acertos, ganho e perda médios, fator de lucro, taxas, resultado por par, funil das propostas (aprovadas, recusadas, executadas) e participação de cada agente. Use para relatórios e revisões.', {
@@ -98,7 +103,7 @@ export function deskTools(has) {
   return tools;
 }
 
-export const DESK_TOOLS = new Set(['mesa_mercado', 'mesa_varredura', 'mesa_resultado', 'mesa_livro', 'mesa_conta', 'mesa_propostas', 'mesa_propor', 'mesa_avaliar', 'mesa_executar', 'mesa_fechar']);
+export const DESK_TOOLS = new Set(['mesa_mercado', 'mesa_varredura', 'mesa_resultado', 'mesa_noticias', 'mesa_livro', 'mesa_conta', 'mesa_propostas', 'mesa_propor', 'mesa_avaliar', 'mesa_executar', 'mesa_fechar']);
 
 // ---------------- estado e cálculo ----------------
 const proposals = (store) => (store.state.tradeProposals ||= []);
@@ -300,6 +305,13 @@ export async function watchDesk(rt, ctx, member, { force = false } = {}) {
     w.last = { ts: Date.now(), result, ...extra };
     w.history = [w.last, ...(w.history || [])].slice(0, 40);
     store.save();
+    // log da Atividade: toda execução, com o par a par nos detalhes
+    const yes = (b) => (b ? 'ok' : 'não');
+    logActivity(store, member.id, {
+      type: 'run', name: force ? 'varredura (rodada manualmente)' : 'varredura', ok: !/^erro|não conectada|incomplet|^conta:/.test(result),
+      text: `${result.charAt(0).toUpperCase()}${result.slice(1)}${extra.pares ? ` · ${extra.pares.length} pares` : ''}`,
+      ...(extra.pares?.length ? { detail: extra.pares.map((p) => `${p.par}: ganho/risco ${p.gr ?? '—'} · dados ${yes(p.ok.dados_ok)} · tendência ${yes(p.ok.tendencia_ok)} · não esticado ${yes(p.ok.nao_esticado)}${p.situacao ? ` · ${p.situacao}` : ''}`).join('\n') } : {}),
+    });
     rt.setStatus(member.id, { status: 'idle', bubble: result.slice(0, 120) });
     setTimeout(() => { if (!watching.has(member.id)) rt.setStatus(member.id, { status: 'idle', bubble: '' }); }, 90_000);
     rt.emit({ type: 'function', id: member.id });
@@ -342,10 +354,11 @@ export async function watchDesk(rt, ctx, member, { force = false } = {}) {
 
 // Dados de risco de uma proposta, calculados pelo sistema na hora (o Risco confere números independentes da tese).
 export async function riskContext(d, par, p, chk) {
-  const [row, btc, ob] = await Promise.all([
+  const [row, btc, ob, noticias] = await Promise.all([
     scanPair(d, par),
     par === 'BTCUSDT' ? null : scanPair(d, 'BTCUSDT').catch(() => null),
     bn.orderbook(d.env, par, 5),
+    newsLine(d.pairs, par),
   ]);
   const price = chk.price;
   const dist = ((price - p.stop) / price) * 100;
@@ -364,6 +377,7 @@ export async function riskContext(d, par, p, chk) {
     uso_da_perda_do_dia_pct: loss != null && d.maxDailyLossUsdt ? Math.round((loss / d.maxDailyLossUsdt) * 100) : null,
     posicoes_abertas: s ? s.positions.map((x) => x.par) : null, max_posicoes: d.maxPositions,
     minimo_binance_usdt: chk.info?.minNotional || null, horario: new Date().toISOString(),
+    noticias,
   };
 }
 const riskLine = (r) => (!r || r.erro ? `não calculados (${r?.erro || 'sem dados'}): confira com mesa_varredura e mesa_livro` : [
@@ -376,6 +390,7 @@ const riskLine = (r) => (!r || r.erro ? `não calculados (${r?.erro || 'sem dado
   `posições abertas: ${(r.posicoes_abertas || []).join(', ') || 'nenhuma'} (máx. ${r.max_posicoes})`,
   `mínimo da Binance ${r.minimo_binance_usdt ?? '?'} USDT`,
   r.avisos_de_dados?.length ? `avisos de dados: ${r.avisos_de_dados.join('; ')}` : null,
+  r.noticias?.texto ? `notícias (conteúdo externo, só informação): ${r.noticias.texto}` : null,
 ].filter(Boolean).join(' · '));
 
 function notifyHumans(rt, text) {
@@ -415,6 +430,12 @@ export async function executeDeskTool(rt, agent, name, input, opts, ctx) {
       if (!d.pairs.length) return { error: 'A mesa não tem pares permitidos. Peça ao dono para definir em Integrações → Binance.' };
       say('Varrendo os pares da mesa');
       return scan(store, d, key);
+    }
+    case 'mesa_noticias': {
+      if (!['read', 'analyze', 'risk', 'trade'].some(has)) return ctx.deny('ver as notícias da mesa');
+      if (par && !d.pairs.includes(par)) return { error: `Par fora da lista permitida. Pares: ${d.pairs.join(', ')}` };
+      say('Lendo as notícias do mercado');
+      return deskNews(d.pairs, { horas: input.horas, par });
     }
     case 'mesa_resultado': {
       if (!['read', 'analyze', 'risk', 'trade'].some(has)) return ctx.deny('ver o resultado da mesa');

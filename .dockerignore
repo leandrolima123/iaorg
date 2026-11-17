@@ -1,5 +1,13 @@
 node_modules
 data
 .env
+.env.*
 .git
+.github
+.claude
+.claude-plugin
+.impeccable
+plugins
+scripts/demo-videos
+site.html
 *.log

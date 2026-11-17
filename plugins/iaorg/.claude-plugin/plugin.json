@@ -1,0 +1,30 @@
+{
+  "name": "iaorg",
+  "displayName": "IAORG",
+  "version": "0.1.0",
+  "description": "Conecta o Claude Code ao IAORG por MCP: contrate agentes, crie tarefas, leia conversas, aprove envios e acompanhe a obra da sua empresa.",
+  "author": {
+    "name": "IAORG",
+    "url": "https://github.com/leandrolima123/iaorg"
+  },
+  "homepage": "https://github.com/leandrolima123/iaorg#plugin-para-o-claude-code",
+  "repository": "https://github.com/leandrolima123/iaorg",
+  "license": "MIT",
+  "keywords": ["iaorg", "mcp", "agentes", "multi-agent", "organograma"],
+  "userConfig": {
+    "iaorg_url": {
+      "type": "string",
+      "title": "Endereço do IAORG",
+      "description": "Onde o seu IAORG roda, sem barra no fim. Ex.: http://localhost:3000 ou https://iaorg.suaempresa.com",
+      "default": "http://localhost:3000",
+      "required": true
+    },
+    "iaorg_token": {
+      "type": "string",
+      "title": "Token de acesso (iaorg_…)",
+      "description": "Crie em Ajustes → Acesso por IA (MCP) no IAORG. Ele aparece uma vez só e define o nível: leitura, operação ou administração.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

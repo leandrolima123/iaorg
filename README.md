@@ -1,6 +1,12 @@
 # IAORG — Escritório virtual de agentes de IA e pessoas
 
+[![CI](https://github.com/leandrolima123/iaorg/actions/workflows/ci.yml/badge.svg)](https://github.com/leandrolima123/iaorg/actions/workflows/ci.yml)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-f2c200)](LICENSE)
+[![Plugin para Claude Code](https://img.shields.io/badge/Claude%20Code-plugin%20MCP-1c1d1c)](#plugin-para-o-claude-code)
+
 **Monte uma empresa em que agentes de IA e pessoas trabalham juntos, num escritório 3D.**
+
+![Capa da demo "Da ordem à entrega"](public/videos/capas/ordem.jpg)
 
 O IAORG é uma plataforma multiempresa (SaaS). Cada cliente monta o seu organograma com **agentes de IA** (CEO, CTO, devs, marketing, atendimento, DevOps…) e **pessoas reais**. Todos aparecem como personagens num **escritório 3D isométrico**.
 
@@ -248,6 +254,29 @@ O IAORG expõe um servidor MCP em `POST /mcp` (Streamable HTTP, sem sessão). Co
 
    Em outras ferramentas, use a URL `…/mcp` e o cabeçalho `Authorization: Bearer iaorg_...`.
 
+### Plugin para o Claude Code
+
+O repositório também é um marketplace de plugins do Claude Code. O plugin `iaorg` traz:
+- a conexão MCP já configurada;
+- a skill que ensina o Claude a operar a empresa: por onde começar, o que pede confirmação e como ler o organograma;
+- a skill `/iaorg:conectar`, que diagnostica a conexão.
+
+```bash
+claude plugin marketplace add leandrolima123/iaorg
+```
+
+Depois, numa sessão do Claude Code, rode `/plugin install iaorg@iaorg`. O Claude Code pede dois valores:
+- **endereço do IAORG**, por exemplo `http://localhost:3000`;
+- **token**, que fica guardado no cofre de credenciais do sistema, não no `settings.json`.
+
+Para trocar esses valores depois, use `/plugin configure iaorg@iaorg`. Pelo terminal, sem diálogo:
+
+```bash
+claude plugin install iaorg@iaorg --config iaorg_url=http://localhost:3000 --config iaorg_token=iaorg_...
+```
+
+Os arquivos ficam em [`plugins/iaorg/`](plugins/iaorg) e o catálogo em [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json).
+
 | Nível | Ferramentas |
 |---|---|
 | Leitura | `empresa_resumo`, `catalogo`, `agente_ficha`, `tarefas_listar`, `tarefa_ver`, `aprovacoes_listar`, `conversas_listar`, `conversa_ler`, `agente_log`, `rotinas_listar`, `rotina_execucao`, `arquivos_listar`, `arquivo_ler`, `integracoes_listar` |
@@ -395,5 +424,15 @@ keycloak/
   Dockerfile                Keycloak com o tema embutido
   import/iaorg-realm.json   realm importado na primeira subida
   themes/iaorg/login/       tema de login com a identidade do IAORG
-scripts/             testes (acesso, conhecimento, rotinas, oficina, cache…)
+scripts/             testes (acesso, conhecimento, rotinas, oficina, cache…) e gerador das capas das demos
+site/                servidor só da landing com lista de interesse (para publicar separado do app)
+plugins/iaorg/       plugin do Claude Code (MCP + skills)
 ```
+
+## Contribuir
+
+Contribuições são bem-vindas. Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para preparar o ambiente, rodar os testes e abrir um Pull Request. O projeto segue o [Código de Conduta](CODE_OF_CONDUCT.md). Falhas de segurança vão pelo reporte privado descrito no [SECURITY.md](SECURITY.md), nunca em issue pública.
+
+## Licença
+
+Código sob a [licença MIT](LICENSE). Os personagens e móveis 3D (KayKit) e os logos de integrações (Simple Icons) são CC0. As fontes Archivo e Barlow Condensed usam a SIL Open Font License. Os nomes e logos de serviços de terceiros pertencem aos seus donos.

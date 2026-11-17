@@ -8,7 +8,8 @@ import { DATA_DIR, randomToken } from './secrets.js';
 import { createCompany, allCompanies, getCompany, hasRole, uid, isSubOf, subsOf } from './companies.js';
 import { mountAuth, requireUser, requireCompany, sessionFromRequest, resolveCompany, updateSession, userCompanies } from './auth.js';
 import * as kc from './keycloak-admin.js';
-import { mountIntegrations, startInboxPoller } from './integrations.js';
+import { mountIntegrations, startInboxPoller, approve } from './integrations.js';
+import { mountTelegram, initTelegram } from './telegram.js';
 import { mountAgentConfig } from './agent-config.js';
 import { mountWorkbench, cancelJob } from './workbench.js';
 import { mountFiles } from './files.js';
@@ -20,7 +21,7 @@ import { mountBrand } from './brand.js';
 import { createToken, tokensOf, revokeToken, maxLevelFor, LEVEL_LABEL } from './tokens.js';
 import { templateList, roleCatalog, ROLE_CATALOG, ROLE_AREAS } from './templates.js';
 import { MODELS, testKey } from './llm.js';
-import { hub, runtimeFor, startScheduler } from './engine.js';
+import { hub, runtimeFor, startScheduler, emitHooks } from './engine.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..');
@@ -45,10 +46,15 @@ app.use('/vendor/fonts/barlow-condensed', express.static(path.join(ROOT, 'node_m
 app.use('/vendor/lucide', express.static(path.join(ROOT, 'node_modules/lucide-static'), { maxAge: '1d' }));
 
 // Páginas: o escritório exige login; o convite manda logar e volta.
+// Quem não está logado vê o site público; /site mostra o site mesmo para quem está logado.
+const page = (file) => (req, res) => res.sendFile(path.join(ROOT, 'public', file));
 app.get('/', (req, res) => {
-  if (!sessionFromRequest(req)) return res.redirect('/login.html');
+  if (!sessionFromRequest(req)) return page('landing.html')(req, res);
   res.sendFile(path.join(ROOT, 'public/index.html'));
 });
+app.get('/site', page('landing.html'));
+app.get(['/privacidade', '/privacy'], page('privacidade.html'));
+app.get(['/termos', '/terms'], page('termos.html'));
 app.get('/invite/:token', (req, res) => {
   // Tela de login do Keycloak (tem o link "Cadastre-se" para quem ainda não tem conta).
   if (!sessionFromRequest(req)) return res.redirect(`/auth/login?next=${encodeURIComponent(req.originalUrl)}`);
@@ -257,6 +263,8 @@ mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor });
 mountWorkbench(app, { requireCompany, need, wrap, runtimeFor });
 // Funções: membros automáticos (sem IA) com configuração própria — ex.: vigia da mesa
 mountFunctions(app, { requireCompany, need, wrap, runtimeFor, refresh });
+// Telegram: a Minha mesa de cada pessoa no celular (vínculo e preferências por pessoa)
+mountTelegram(app, { requireCompany, wrap, runtimeFor });
 
 // ---------------- equipe ----------------
 // Aparência do personagem 3D (escritório): personagem, acessórios, cor da roupa, objeto na mão e tamanho.
@@ -627,5 +635,6 @@ server.listen(PORT, () => {
   console.log(`IAORG rodando em ${APP_URL}`);
   startScheduler();
   startInboxPoller({ allCompanies, runtimeFor });
+  initTelegram({ allCompanies, runtimeFor, approve, emitHooks });
   kc.ensureLoginTheme().catch(() => {}); // login e cadastro com a identidade do IAORG
 });

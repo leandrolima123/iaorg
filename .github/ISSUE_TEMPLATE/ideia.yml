@@ -1,0 +1,24 @@
+name: Ideia
+description: Sugira uma melhoria ou um recurso novo
+labels: [ideia]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve
+      description: Conte a situação real. Ex.: "o atendimento demora porque..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Como você imagina
+      description: Como deveria funcionar, do ponto de vista de quem usa.
+    validations:
+      required: true
+  - type: checkboxes
+    id: ajuda
+    attributes:
+      label: Contribuição
+      options:
+        - label: Posso abrir um Pull Request para isso

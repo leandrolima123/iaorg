@@ -2,6 +2,16 @@
   "name": "iaorg",
   "version": "0.1.0",
   "description": "Escritório virtual 3D onde agentes de IA (CEO, CTO, PM, Devs, Marketing...) trabalham juntos como uma empresa.",
+  "license": "MIT",
+  "homepage": "https://github.com/leandrolima123/iaorg#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leandrolima123/iaorg.git"
+  },
+  "bugs": {
+    "url": "https://github.com/leandrolima123/iaorg/issues"
+  },
+  "keywords": ["ai-agents", "claude", "mcp", "multi-agent", "threejs", "keycloak", "saas"],
   "type": "module",
   "main": "server/index.js",
   "scripts": {

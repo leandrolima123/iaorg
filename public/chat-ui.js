@@ -138,7 +138,7 @@ export function chatNeedsRefresh(msg, ctx) {
 
 // ---------------- log do agente ----------------
 const ls = { id: null, types: [], q: '', items: [], stats: null, more: true };
-const TYPES = [['message', 'Mensagens', 'message-square'], ['task', 'Tarefas', 'list-checks'], ['tool', 'Ferramentas', 'wrench'], ['job', 'Oficina', 'hammer'], ['text', 'Pensamentos', 'brain'], ['file', 'Arquivos', 'file-text'], ['error', 'Erros', 'triangle-alert'], ['system', 'Sistema', 'settings']];
+const TYPES = [['run', 'Execuções', 'radar'], ['message', 'Mensagens', 'message-square'], ['task', 'Tarefas', 'list-checks'], ['tool', 'Ferramentas', 'wrench'], ['job', 'Oficina', 'hammer'], ['text', 'Pensamentos', 'brain'], ['file', 'Arquivos', 'file-text'], ['error', 'Erros', 'octagon-x'], ['system', 'Sistema', 'settings']];
 const TYPE_INFO = Object.fromEntries(TYPES.map(([t, l, i]) => [t, { l, i }]));
 
 export function openLogFor(id) { ls.id = id; ls.items = []; ls.more = true; }
@@ -150,7 +150,7 @@ export async function renderActivityPanel(root, ctx) {
   root.innerHTML = `
     <div class="lg">
       <aside class="lg-side"><h4>Escolha quem</h4><ul>${agents.map((x) => `<li><button type="button" class="lg-agent ${x.id === ls.id ? 'on' : ''}" data-agent="${x.id}">
-        ${avatar({ name: x.name, color: x.color })}<span><b>${esc(x.name)}</b><small>${esc(x.role)}${x.kind === 'human' ? ' · pessoa' : ''}</small></span>
+        ${avatar({ name: x.name, color: x.color })}<span><b>${esc(x.name)}</b><small>${esc(x.role)}${x.kind === 'human' ? ' · pessoa' : x.kind === 'function' ? ' · função' : ''}</small></span>
         <span class="lg-dot ${x.runtime?.status || ''}" title="${esc(x.runtime?.status || '')}"></span></button></li>`).join('')}</ul></aside>
       <section class="lg-main">${a ? `
         <header class="lg-head">${avatar({ name: a.name, color: a.color }, 'big')}<div><b>${esc(a.name)}</b><span class="hint">${esc(a.title || a.role)} · tudo o que fez, do mais recente ao mais antigo</span></div>
@@ -203,7 +203,7 @@ async function loadLog(root, ctx, more = false) {
   const moreBtn = $('[data-more]', root);
   if (moreBtn) moreBtn.hidden = !ls.more;
   const st = $('[data-stats]', root);
-  if (st && ls.stats) st.innerHTML = `<span class="num">${ls.stats.total}</span> nas últimas 24 h${ls.stats.tool ? ` · ${ls.stats.tool} ferramentas` : ''}${ls.stats.job ? ` · ${ls.stats.job} passos na oficina` : ''}${ls.stats.error ? ` · <span class="error">${ls.stats.error} erro(s)</span>` : ''}`;
+  if (st && ls.stats) st.innerHTML = `<span class="num">${ls.stats.total}</span> nas últimas 24 h${ls.stats.run ? ` · ${ls.stats.run} execuções` : ''}${ls.stats.tool ? ` · ${ls.stats.tool} ferramentas` : ''}${ls.stats.job ? ` · ${ls.stats.job} passos na oficina` : ''}${ls.stats.error ? ` · <span class="error">${ls.stats.error} erro(s)</span>` : ''}`;
 }
 
 export const currentLogAgent = () => ls.id;
