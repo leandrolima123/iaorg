@@ -231,7 +231,7 @@
     .btn.gh img { width: 16px; height: 16px; }
     @media (max-width: 520px) { .btn.gh { width: 34px; padding: 0; } .btn.gh span { display: none; } }
     .oss { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(28px, 6vw, 80px); align-items: center; }
-    .oss .hero-cta { margin-top: 26px; }
+    .oss .hero-cta { margin-top: 26px; justify-content: flex-start; }
     .oss-facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; padding: 0; list-style: none; }
     .oss-facts li { font-size: .8125rem; color: var(--soft); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .03); }
     .term { border-radius: 18px; border: 1px solid var(--line-2); background: #0e0e10; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); overflow: hidden; min-width: 0; }
@@ -240,18 +240,53 @@
     .term-tabs { display: flex; gap: 4px; margin-left: 12px; }
     .term-tabs button { border: 0; background: none; color: var(--muted); font: 600 .8125rem/1 var(--font); padding: 7px 12px; border-radius: 999px; cursor: pointer; transition: background .15s, color .15s; }
     .term-tabs button[aria-selected="true"] { background: rgba(255, 255, 255, .09); color: var(--text); }
-    .term-body { padding: 18px 18px 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .term-title { margin-left: auto; color: var(--muted); font: 500 .75rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .term-replay { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; transition: background .15s, color .15s, transform .1s ease-out; }
+    .term-replay:hover { background: rgba(255, 255, 255, .08); color: var(--text); }
+    .term-replay:active { transform: scale(.92); }
+    .term-replay svg { width: 15px; height: 15px; }
+    /* tela do terminal: a altura fica fixa para a animação não empurrar a página */
+    .term-body { padding: 18px 18px 16px; min-height: 352px; }
     .term-body[hidden] { display: none; }
-    .cmd { display: grid; gap: 6px; }
-    .cmd small { color: var(--muted); font-size: .8125rem; }
-    .cmd div { display: flex; align-items: center; gap: 10px; border-radius: 10px; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); padding: 10px 10px 10px 14px; }
-    .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 500 .8125rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); scrollbar-width: none; }
-    .cmd code::before { content: "$ "; color: var(--sign); }
-    .cmd code.cc::before { content: "› "; }
-    .cmd button { flex: none; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .08); color: var(--soft); font: 600 .75rem/1 var(--font); padding: 7px 10px; cursor: pointer; transition: background .15s, transform .1s ease-out; }
-    .cmd button:hover { background: rgba(255, 255, 255, .14); }
-    .cmd button:active { transform: scale(.95); }
+    .tx { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font: 500 .8125rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--soft); min-width: 0; }
+    .tx li { min-width: 0; overflow-wrap: anywhere; }
+    .tx .gap { height: 8px; }
+    .tx .in { display: flex; align-items: flex-start; gap: 10px; color: var(--text); }
+    .tx .in > span { flex: 1; min-width: 0; }
+    .tx .in > span::before { content: "$ "; color: var(--sign); }
+    .tx .note { color: var(--muted); font-family: var(--font); font-size: .75rem; margin-top: 6px; }
+    .tx .out { color: var(--muted); padding-left: 2ch; }
+    .tx .ok { color: var(--soft); padding-left: 2ch; }
+    .tx .ok::before { content: "✔ "; color: var(--ok); }
+    .tx .ok em { font-style: normal; color: var(--ok); }
+    .tx .in.cc > span::before { content: "› "; color: var(--muted); }
+    .tx .done { color: var(--text); margin-top: 6px; }
+    .tx .done b { color: var(--sign); font-weight: 600; }
+    /* sessão do Claude Code */
+    .tx .user { color: var(--text); background: rgba(255, 255, 255, .05); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+    .tx .user > span::before { content: "› "; color: var(--muted); }
+    .tx .tool { color: var(--text); }
+    .tx .tool::before, .tx .ai::before { content: "● "; color: var(--ok); }
+    .tx .tool em { font-style: normal; color: var(--muted); }
+    .tx .res { color: var(--muted); padding-left: 2ch; }
+    .tx .res::before { content: "⎿ "; }
+    .tx .ai { color: var(--text); margin-top: 6px; }
+    .tx .ai::before { color: var(--sign); }
+    .cp { flex: none; margin-top: -2px; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 7px; background: rgba(255, 255, 255, .07); color: var(--soft); font: 600 .6875rem/1 var(--font); padding: 6px 9px; cursor: pointer; transition: background .15s, opacity .2s, transform .1s ease-out; }
+    .cp:hover { background: rgba(255, 255, 255, .14); }
+    .cp:active { transform: scale(.95); }
+    /* animação: linhas ainda não "digitadas" ficam escondidas */
+    .term.playing .tx li.wait { visibility: hidden; }
+    .term.playing .tx li.wait .cp, .term.playing .tx li.typing .cp { opacity: 0; pointer-events: none; }
+    .tx li.show { animation: tx-in .22s ease-out both; }
+    @keyframes tx-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .caret { display: inline-block; width: .55em; height: 1.1em; margin-left: 1px; vertical-align: -.2em; background: var(--sign); animation: caret 1s steps(1) infinite; }
+    @keyframes caret { 50% { opacity: 0; } }
+    .spin::after { content: "⠋"; display: inline-block; margin-left: 6px; color: var(--sign); animation: spin .8s steps(1) infinite; }
+    @keyframes spin { 0% { content: "⠋"; } 12% { content: "⠙"; } 25% { content: "⠹"; } 37% { content: "⠸"; } 50% { content: "⠼"; } 62% { content: "⠴"; } 75% { content: "⠦"; } 87% { content: "⠧"; } }
     @media (max-width: 900px) { .oss { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 520px) { .term-body { min-height: 400px; padding: 14px 12px; } .tx { font-size: .75rem; } .term-title { display: none; } }
+    @media (prefers-reduced-motion: reduce) { .tx li.show { animation: none; } .caret, .spin::after { animation: none; } }
 
     /* ---------- Lista de interesse ---------- */
     .join { display: grid; grid-template-columns: 1fr 1.1fr; gap: clamp(28px, 6vw, 72px); align-items: start; }
@@ -626,22 +661,46 @@
             <a class="btn lg" href="https://github.com/leandrolima123/iaorg#readme" target="_blank" rel="noopener">Ler o guia</a>
           </div>
         </div>
-        <div class="term rv" style="--i:1">
+        <div class="term rv" style="--i:1" id="term">
           <div class="term-bar"><i></i><i></i><i></i>
             <div class="term-tabs" role="tablist" aria-label="Como começar">
               <button type="button" role="tab" id="tabSubir" aria-selected="true" aria-controls="paneSubir">Subir</button>
               <button type="button" role="tab" id="tabMcp" aria-selected="false" aria-controls="paneMcp" tabindex="-1">Claude Code</button>
             </div>
+            <span class="term-title" id="termTitle">~/iaorg</span>
+            <button type="button" class="term-replay" id="termReplay" aria-label="Ver a animação de novo" title="Ver de novo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
           </div>
+          <!-- O conteúdo completo já está no HTML (sem JavaScript ou com movimento reduzido, aparece pronto). O script só "digita" de novo. -->
           <div class="term-body" role="tabpanel" id="paneSubir" aria-labelledby="tabSubir">
-            <div class="cmd"><small>1. Baixe o código</small><div><code>git clone https://github.com/leandrolima123/iaorg.git && cd iaorg</code><button type="button" data-copy>Copiar</button></div></div>
-            <div class="cmd"><small>2. Configure os segredos (veja os comentários no arquivo)</small><div><code>cp .env.example .env</code><button type="button" data-copy>Copiar</button></div></div>
-            <div class="cmd"><small>3. Suba o app, o login e a oficina</small><div><code>docker compose up -d --build</code><button type="button" data-copy>Copiar</button></div></div>
+            <ol class="tx">
+              <li class="in"><span>git clone https://github.com/leandrolima123/iaorg.git && cd iaorg</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="out">Cloning into 'iaorg'… done.</li>
+              <li class="gap"></li>
+              <li class="in"><span>cp .env.example .env</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="note">Preencha a chave da Anthropic e as senhas; cada linha do arquivo explica o que é.</li>
+              <li class="gap"></li>
+              <li class="in"><span>docker compose up -d --build</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="ok" data-wait="900">Container iaorg-postgres-1 <em>Healthy</em></li>
+              <li class="ok" data-wait="700">Container iaorg-keycloak-1 <em>Healthy</em></li>
+              <li class="ok" data-wait="500">Container iaorg-runner <em>Started</em></li>
+              <li class="ok" data-wait="500">Container iaorg <em>Started</em></li>
+              <li class="done" data-wait="600">Pronto: abra <b>http://localhost:3000</b> e monte a sua empresa.</li>
+            </ol>
           </div>
           <div class="term-body" role="tabpanel" id="paneMcp" aria-labelledby="tabMcp" hidden>
-            <div class="cmd"><small>1. Adicione o marketplace do IAORG</small><div><code>claude plugin marketplace add leandrolima123/iaorg</code><button type="button" data-copy>Copiar</button></div></div>
-            <div class="cmd"><small>2. Instale o plugin (pede o endereço do IAORG e o token)</small><div><code class="cc">/plugin install iaorg@iaorg</code><button type="button" data-copy>Copiar</button></div></div>
-            <div class="cmd"><small>3. Peça em português</small><div><code class="cc">Contrate um agente de atendimento que responde ao CEO</code><button type="button" data-copy>Copiar</button></div></div>
+            <ol class="tx">
+              <li class="in"><span>claude plugin marketplace add leandrolima123/iaorg</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="in"><span>claude</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="in cc"><span>/plugin install iaorg@iaorg</span><button type="button" class="cp" data-copy>Copiar</button></li>
+              <li class="out" data-wait="500">O plugin pede o endereço do IAORG e o token (Ajustes → MCP); o token fica no chaveiro do sistema.</li>
+              <li class="gap"></li>
+              <li class="user"><span>Contrate um agente de atendimento que responde ao CEO</span></li>
+              <li class="tool" data-wait="700">iaorg · empresa_resumo</li>
+              <li class="res" data-wait="500">RapidoJa Delivery · 6 pessoas · CEO: Ana Ribeiro (id: dono)</li>
+              <li class="tool" data-wait="900">iaorg · agente_contratar <em>(nome: "Júlia Ramos", cargo: "Atendimento", chefe_id: "dono")</em></li>
+              <li class="res" data-wait="500">Contratada · e-mails a clientes passam pela sua aprovação</li>
+              <li class="ai" data-wait="800">Pronto! A Júlia Ramos entrou na equipe e responde à Ana. Quer que eu ligue o e-mail de atendimento para ela?</li>
+            </ol>
           </div>
         </div>
       </div>
@@ -732,32 +791,90 @@
   </footer>
 
   <script>
-    // Código aberto: abas (Subir / Claude Code) e botões de copiar.
+    // Código aberto: terminal animado com abas (Subir / Claude Code) e botões de copiar.
+    // O HTML já traz tudo pronto; a animação esconde as linhas e as "digita" de novo. Com movimento reduzido, nada anima.
     (() => {
-      const tabs = [...document.querySelectorAll('.term-tabs [role="tab"]')];
-      const select = (t) => {
+      const term = document.getElementById('term');
+      const tabs = [...term.querySelectorAll('.term-tabs [role="tab"]')];
+      const title = document.getElementById('termTitle');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const TITLES = { paneSubir: '~/iaorg', paneMcp: 'claude · ~/projeto' };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const textOf = (s) => s.dataset.full ?? s.textContent;
+      let run = 0, touched = false, seen = false;
+      const current = () => document.getElementById(tabs.find((t) => t.getAttribute('aria-selected') === 'true').getAttribute('aria-controls'));
+
+      async function play(pane) {
+        const id = ++run;
+        const alive = () => id === run && !pane.hidden;
+        const lines = [...pane.querySelectorAll('.tx > li')];
+        for (const l of lines) {
+          const s = l.querySelector(':scope > span');
+          if (s && l.matches('.in, .user')) { s.dataset.full = textOf(s); s.textContent = reduced ? s.dataset.full : ''; s.classList.remove('spin'); }
+          l.classList.remove('show', 'typing');
+          l.classList.toggle('wait', !reduced);
+        }
+        if (reduced) { term.classList.remove('playing'); return; }
+        term.classList.add('playing');
+        let lastIn = null;
+        for (const l of lines) {
+          if (!alive()) return;
+          if (l.dataset.wait) { lastIn?.classList.add('spin'); await sleep(+l.dataset.wait); if (!alive()) return; }
+          l.classList.remove('wait'); l.classList.add('show');
+          if (l.matches('.in, .user')) {
+            lastIn?.classList.remove('spin');
+            const s = l.querySelector(':scope > span');
+            const tn = document.createTextNode(''); const caret = document.createElement('i'); caret.className = 'caret';
+            s.textContent = ''; s.append(tn, caret); l.classList.add('typing');
+            await sleep(260);
+            for (const ch of s.dataset.full) { if (!alive()) return; tn.data += ch; await sleep(ch === ' ' ? 45 : 16 + Math.random() * 34); }
+            await sleep(380); caret.remove(); l.classList.remove('typing');
+            lastIn = s;
+          } else await sleep(l.classList.contains('gap') ? 60 : 160);
+        }
+        lastIn?.classList.remove('spin');
+        term.classList.remove('playing');
+        // na primeira vez, sem a pessoa mexer, passa sozinho para a aba do Claude Code
+        if (!touched && pane.id === 'paneSubir') { await sleep(2600); if (!touched && id === run) select(tabs[1]); }
+      }
+      // termina na hora: mostra tudo pronto (ao sair de uma aba no meio da animação)
+      const finish = (pane) => { for (const l of pane.querySelectorAll('.tx > li')) { l.classList.remove('wait', 'typing'); const s = l.querySelector(':scope > span'); if (s?.dataset.full) { s.textContent = s.dataset.full; s.classList.remove('spin'); } } };
+
+      function select(t) {
         for (const x of tabs) {
           const on = x === t;
           x.setAttribute('aria-selected', on);
           x.tabIndex = on ? 0 : -1;
-          document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+          const p = document.getElementById(x.getAttribute('aria-controls'));
+          if (!on) finish(p);
+          p.hidden = !on;
         }
-      };
+        const pane = current();
+        title.textContent = TITLES[pane.id] || '';
+        play(pane);
+      }
       tabs.forEach((t, i) => {
-        t.addEventListener('click', () => select(t));
+        t.addEventListener('click', () => { touched = true; select(t); });
         t.addEventListener('keydown', (e) => {
           const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
           if (!d) return;
           const n = tabs[(i + d + tabs.length) % tabs.length];
-          select(n); n.focus(); e.preventDefault();
+          touched = true; select(n); n.focus(); e.preventDefault();
         });
       });
-      document.addEventListener('click', async (e) => {
+      document.getElementById('termReplay').addEventListener('click', () => { touched = true; play(current()); });
+      // começa quando o terminal aparece na tela
+      if (!reduced && 'IntersectionObserver' in window) {
+        current().querySelectorAll('.tx > li').forEach((l) => l.classList.add('wait'));
+        term.classList.add('playing');
+        new IntersectionObserver((es, io) => { if (es.some((e) => e.isIntersecting) && !seen) { seen = true; io.disconnect(); play(current()); } }, { threshold: 0.35 }).observe(term);
+      }
+      term.addEventListener('click', async (e) => {
         const b = e.target.closest('[data-copy]');
         if (!b) return;
-        const text = b.previousElementSibling.textContent;
-        try { await navigator.clipboard.writeText(text); b.textContent = 'Copiado'; }
-        catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); getSelection().removeAllRanges(); getSelection().addRange(r); b.textContent = 'Selecionado'; }
+        const span = b.previousElementSibling;
+        try { await navigator.clipboard.writeText(textOf(span)); b.textContent = 'Copiado'; }
+        catch { const r = document.createRange(); r.selectNodeContents(span); getSelection().removeAllRanges(); getSelection().addRange(r); b.textContent = 'Selecionado'; }
         clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copiar'; }, 1600);
       });
     })();
