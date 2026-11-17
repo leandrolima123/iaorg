@@ -455,8 +455,10 @@ export function mountWorkbench(app, { requireCompany, need, wrap, runtimeFor }) 
     const agent = rt.store.getAgent(job.agentId);
     if (!agent) return res.json({ error: 'Agente não existe mais' });
     let out;
-    try { out = await rt.executeTool(agent, name, input || {}, job.taskId, { forceApproval: job.test }); } catch (e) { out = { error: e.message }; }
-    job.steps.push({ ts: Date.now(), type: 'tool', name, text: short(JSON.stringify(input || {}), 200) });
+    // fromJob: a ferramenta pode receber arquivos do container (_anexos) e devolver arquivos para ele (_salvar)
+    try { out = await rt.executeTool(agent, name, input || {}, job.taskId, { forceApproval: job.test, fromJob: true }); } catch (e) { out = { error: e.message }; }
+    const { _anexos, ...shown } = input || {};
+    job.steps.push({ ts: Date.now(), type: 'tool', name, text: short(JSON.stringify(shown), 200) });
     res.json(out ?? { ok: true });
   }));
 

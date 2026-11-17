@@ -305,12 +305,13 @@ export async function renderKnowledge(root, ctx) {
 /** Fila de aprovações (Minha mesa). ctx = { approvals, agentName, reload } */
 export function renderApprovals(root, ctx) {
   root.innerHTML = ctx.approvals.length ? ctx.approvals.slice().reverse().map((a) => `
-    <article class="task approval" data-id="${a.id}">
-      <div class="task-top"><span class="task-id">${{ chat: 'Chat do site', email: 'E-mail', whatsapp: 'WhatsApp', ads: 'Google Ads · mudança de campanha', trade: 'Binance · ordem de compra' }[a.channel] || 'Ação'}</span><span class="stamp doing">Aguardando</span></div>
+    <article class="task approval" data-id="${a.id}" data-channel="${esc(a.channel || '')}">
+      <div class="task-top"><span class="task-id">${{ chat: 'Chat do site', email: 'E-mail', whatsapp: 'WhatsApp', ads: 'Google Ads · mudança de campanha', trade: 'Binance · ordem de compra', social: a.tool === 'social_responder' ? 'Redes sociais · resposta' : 'Redes sociais · post' }[a.channel] || 'Ação'}</span><span class="stamp doing">Aguardando</span></div>
       <div class="task-meta">${esc(ctx.agentName(a.agentId))} → <b>${esc(a.preview?.para || 'cliente')}</b>${a.preview?.origem ? ` <span class="hint">(${esc(a.preview.origem)})</span>` : ''}${a.preview?.assunto ? ` · ${esc(a.preview.assunto)}` : ''} · ${when(a.ts)}</div>
       ${a.preview?.conversa || a.preview?.original ? `<details><summary class="hint">Ver ${a.preview.conversa ? 'a conversa' : 'o e-mail original'}</summary><pre class="quote">${esc(a.preview.conversa || a.preview.original)}</pre></details>` : ''}
-      ${a.readOnlyText ? `<div class="approval-what">${esc(a.text)}</div>` : `<textarea rows="5" aria-label="Texto da resposta">${esc(a.text)}</textarea>`}
-      <div class="row"><button class="btn small primary" data-ok>${ic(['ads', 'trade'].includes(a.channel) ? 'check' : 'send', 'sm')}${a.channel === 'trade' ? 'Aprovar e enviar a ordem' : a.channel === 'ads' ? 'Aprovar e aplicar' : 'Aprovar e enviar'}</button>
+      ${(a.preview?.imagens || []).length ? `<div class="approval-imgs">${a.preview.imagens.map((p) => `<a href="/api/file?path=${encodeURIComponent(p)}" target="_blank" rel="noopener" title="${esc(p)}"><img src="/api/file?path=${encodeURIComponent(p)}" alt="Imagem do post: ${esc(p)}" loading="lazy"></a>`).join('')}</div>` : ''}
+      ${a.readOnlyText ? `<div class="approval-what">${esc(a.text)}</div>` : `<textarea rows="${a.channel === 'social' ? 7 : 5}" aria-label="${a.channel === 'social' ? 'Texto do post' : 'Texto da resposta'}">${esc(a.text)}</textarea>`}
+      <div class="row"><button class="btn small primary" data-ok>${ic(['ads', 'trade'].includes(a.channel) ? 'check' : 'send', 'sm')}${a.channel === 'trade' ? 'Aprovar e enviar a ordem' : a.channel === 'ads' ? 'Aprovar e aplicar' : a.channel === 'social' && a.tool === 'social_publicar' ? (a.input?.agendar_para ? 'Aprovar e agendar' : 'Aprovar e publicar') : 'Aprovar e enviar'}</button>
         <input data-why placeholder="Orientação para o agente refazer (opcional)" style="flex:1;min-width:180px">
         <button class="btn small" data-no>Descartar</button></div>
     </article>`).join('') : '<p class="empty">Nada aguardando aprovação.</p>';
@@ -318,7 +319,7 @@ export function renderApprovals(root, ctx) {
     $('[data-ok]', card).addEventListener('click', async (e) => {
       e.target.disabled = true;
       const ta = $('textarea', card);
-      try { await api('POST', `/api/approvals/${card.dataset.id}/approve`, ta ? { text: ta.value } : {}); toast(ta ? 'Resposta enviada ao cliente' : 'Mudança aplicada'); ctx.reload(); }
+      try { await api('POST', `/api/approvals/${card.dataset.id}/approve`, ta ? { text: ta.value } : {}); toast(card.dataset.channel === 'social' ? 'Aprovado: publicado nas redes' : ta ? 'Resposta enviada ao cliente' : 'Mudança aplicada'); ctx.reload(); }
       catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
     });
     $('[data-no]', card).addEventListener('click', async () => {

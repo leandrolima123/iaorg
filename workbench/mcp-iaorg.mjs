@@ -57,6 +57,43 @@ const LOCAL = {
     },
   },
 };
+// Ponte de arquivos com o IAORG:
+// - ida: imagens citadas em "imagens"/"referencias" que existem aqui (ex.: um card feito no navegador) vão junto (_anexos),
+//   porque o arquivo real da empresa só recebe o que foi produzido aqui ao fim da tarefa;
+// - volta: arquivos criados no servidor (ex.: imagem gerada por IA) chegam em _salvar, são gravados em /work/entregas
+//   e as imagens voltam também como imagem, para o agente conferir o resultado.
+const FILE_KEYS = ['imagens', 'referencias'];
+const MAX_ATTACH = 30 * 1024 * 1024;
+function withFiles(input) {
+  const anexos = []; let total = 0;
+  for (const k of FILE_KEYS) {
+    for (const p of [].concat(input[k] || [])) {
+      try {
+        const full = inside(p);
+        if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
+        const buf = fs.readFileSync(full);
+        if (total + buf.length > MAX_ATTACH) continue;
+        total += buf.length;
+        anexos.push({ path: rel(full), b64: buf.toString('base64') });
+      } catch { /* caminho de fora: o IAORG procura no arquivo da empresa */ }
+    }
+  }
+  return anexos.length ? { ...input, _anexos: anexos } : input;
+}
+function saveFiles(out) {
+  const images = [];
+  for (const f of [].concat(out?._salvar || [])) {
+    try {
+      const full = inside(f.path);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, Buffer.from(f.b64, 'base64'));
+      if (/^image\/(png|jpeg|webp|gif)$/.test(f.mime || '') && f.b64.length < 4.5 * 1024 * 1024) images.push({ type: 'image', data: f.b64, mimeType: f.mime });
+    } catch { /* ignora */ }
+  }
+  if (out && out._salvar) delete out._salvar;
+  return images;
+}
+
 const tools = [...Object.entries(LOCAL).map(([name, t]) => ({ name, description: t.description, input_schema: t.input_schema })), ...remote.filter((t) => !LOCAL[t.name])];
 
 const server = new Server({ name: 'iaorg', version: '1.0.0' }, { capabilities: { tools: {} } });
@@ -75,11 +112,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Job-Token': token },
-      body: JSON.stringify({ name, input: input || {} }),
-      signal: AbortSignal.timeout(120000),
+      body: JSON.stringify({ name, input: withFiles(input || {}) }),
+      signal: AbortSignal.timeout(300000),
     });
     const out = await res.json().catch(() => ({ error: `Resposta inválida (${res.status})` }));
-    return { content: [{ type: 'text', text: JSON.stringify(out).slice(0, 60000) }], isError: !!out?.error };
+    const images = saveFiles(out);
+    return { content: [{ type: 'text', text: JSON.stringify(out).slice(0, 60000) }, ...images], isError: !!out?.error };
   } catch (e) {
     return { content: [{ type: 'text', text: JSON.stringify({ error: `Falha ao falar com o IAORG: ${e.message}` }) }], isError: true };
   }

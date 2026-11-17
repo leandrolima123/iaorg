@@ -15,6 +15,11 @@ import { renderEmail } from './brand.js';
 import * as desk from './trading.js';
 import * as bn from './binance.js';
 import * as telegram from './telegram.js';
+import * as uploadpost from './uploadpost.js';
+import * as imagegen from './imagegen.js';
+import { mimeOf, recordWrite } from './files.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const POLL_MS = +process.env.INBOX_POLL_SECONDS * 1000 || 60000;
@@ -115,6 +120,44 @@ export const CATALOG = [
     suggest: ['marketing', 'trafego', 'ceo'],
   },
   {
+    type: 'uploadpost', name: 'Redes sociais (Upload-Post)', category: 'Marketing', icon: 'share-2', auth: 'apikey', status: 'available',
+    description: 'Instagram, Facebook, LinkedIn, X, Threads e TikTok numa conexão só: o agente publica e agenda posts (com imagem ou só texto), acompanha as métricas e lê e responde comentários. Por padrão, cada post e cada resposta passam pela sua aprovação em Minha mesa.',
+    tokenLabel: 'API key do Upload-Post', tokenPlaceholder: 'chave da API',
+    tokenHelp: 'No app.upload-post.com: crie um perfil, conecte as redes nele (Instagram precisa ser conta profissional) e gere a chave em API Keys. O plano grátis permite 10 posts por mês.',
+    tokenUrl: 'https://app.upload-post.com/',
+    configFields: [
+      { key: 'profile', label: 'Perfil do Upload-Post (vazio = o primeiro)', placeholder: 'Nome do perfil criado no Upload-Post' },
+      { key: 'facebookPageId', label: 'ID da página do Facebook (opcional)', placeholder: 'Só se houver mais de uma página conectada' },
+      { key: 'linkedinPageId', label: 'ID da página da empresa no LinkedIn (opcional)', placeholder: 'Vazio = posta no perfil pessoal' },
+      { key: 'mode', label: 'Publicação', options: [{ value: 'approval', label: 'Cada post e resposta passa pela minha aprovação' }, { value: 'auto', label: 'Automática: o agente publica direto' }] },
+    ],
+    editable: true,
+    perms: [{ id: 'read', label: 'Ver posts, métricas e comentários' }, { id: 'post', label: 'Publicar e agendar posts' }, { id: 'reply', label: 'Responder comentários' }],
+    suggest: ['marketing', 'social', 'conteudo', 'trafego'],
+  },
+  {
+    type: 'openai_images', name: 'Imagens com IA (OpenAI)', category: 'Criação', icon: 'image', auth: 'apikey', status: 'available',
+    description: 'O agente cria e edita imagens com o GPT Image (posts, anúncios, ilustrações, fotos de produto) a partir de uma descrição ou de imagens de referência, como o logo ou a foto do produto. As imagens vão para Arquivos; o custo é cobrado na sua conta da OpenAI.',
+    tokenLabel: 'API key da OpenAI', tokenPlaceholder: 'sk-…',
+    tokenHelp: 'Crie em platform.openai.com/api-keys (com créditos na conta). Os modelos GPT Image podem exigir a verificação da organização em Settings → Organization → General.',
+    tokenUrl: 'https://platform.openai.com/api-keys',
+    configFields: [{ key: 'model', label: 'Modelo (vazio = o mais recente disponível)', placeholder: 'Ex.: gpt-image-2.5-sunburst' }],
+    editable: true,
+    perms: [{ id: 'generate', label: 'Criar e editar imagens' }],
+    suggest: ['marketing', 'designer', 'design', 'social', 'conteudo'],
+  },
+  {
+    type: 'gemini_images', name: 'Imagens com IA (Gemini)', category: 'Criação', icon: 'image', auth: 'apikey', status: 'available',
+    description: 'O agente cria e edita imagens com o Gemini (Nano Banana) a partir de uma descrição ou de imagens de referência, como o logo ou a foto do produto. As imagens vão para Arquivos; o custo é cobrado na sua conta do Google AI Studio.',
+    tokenLabel: 'API key do Google AI Studio', tokenPlaceholder: 'AIza…',
+    tokenHelp: 'Crie em aistudio.google.com/apikey. A geração de imagens exige um projeto com faturamento ativo no Google Cloud.',
+    tokenUrl: 'https://aistudio.google.com/apikey',
+    configFields: [{ key: 'model', label: 'Modelo (vazio = o mais recente disponível)', placeholder: 'Ex.: gemini-3.1-flash-image' }],
+    editable: true,
+    perms: [{ id: 'generate', label: 'Criar e editar imagens' }],
+    suggest: ['marketing', 'designer', 'design', 'social', 'conteudo'],
+  },
+  {
     type: 'binance', name: 'Binance (mesa de trading)', category: 'Finanças', icon: 'chart-candlestick', auth: 'token', status: 'available',
     description: 'Mesa de trading de cripto no spot. O analista propõe, outro agente avalia o risco e o executor compra sempre com stop. Os limites da empresa (valor por ordem, risco por operação, perda no dia, posições) são conferidos no código, e o botão "Parar a mesa" bloqueia novas compras na hora. Comece no testnet.',
     tokenLabel: 'Chave de API da Binance', tokenPlaceholder: 'API Key e Secret Key',
@@ -193,6 +236,87 @@ const crispCtx = (store) => {
   const c = conn(store, 'crisp');
   return { cred: crisp.parseToken(decrypt(c.secret)), tier: c.config?.tier || 'website', site: c.config?.websiteId, nick: c.config?.agentName || '' };
 };
+// ---------- redes sociais e imagens ----------
+const socialProfile = (store) => {
+  const cfg = conn(store, 'uploadpost')?.config || {};
+  const list = cfg.profiles || [];
+  return list.find((p) => p.username === cfg.profile) || list[0] || (cfg.profile ? { username: cfg.profile, accounts: {} } : null);
+};
+const socialNets = (p) => Object.keys(p?.accounts || {}).filter((k) => uploadpost.PLATFORMS.includes(k));
+const socialLine = (p) => socialNets(p).map((k) => `${uploadpost.LABEL[k]}${p.accounts[k].name ? ` (${p.accounts[k].name})` : ''}${p.accounts[k].reauth ? ' [precisa reconectar]' : ''}`).join(', ');
+const IMG_TYPES = ['openai_images', 'gemini_images'];
+const imageProviders = (store, agent) => IMG_TYPES.filter((t) => can(store, agent, t, 'generate'));
+const imageModel = (c) => c?.config?.model || c?.config?.autoModel || '';
+const IMG_EXT = /\.(jpe?g|png|webp)$/i;
+const slugify = (s, n = 50) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, n).replace(/-$/, '') || 'imagem';
+const relClean = (p) => String(p || '').replace(/\\/g, '/').replace(/^\/?work\/entregas\/?/, '').replace(/^\/+/, '').trim();
+const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+
+/**
+ * Resolve imagens citadas pelo agente: caminhos do arquivo da empresa. Na oficina, a imagem pode existir só no
+ * container (ex.: um card feito no navegador) e chega junto em _anexos: grava no arquivo da empresa antes de usar.
+ */
+function resolveImages(rt, agent, list, anexos, taskHint, max) {
+  const store = rt.store;
+  const out = [];
+  for (const raw of [].concat(list || []).slice(0, max)) {
+    const rel = relClean(raw);
+    if (!rel) continue;
+    if (!IMG_EXT.test(rel)) return { error: `"${raw}" não é uma imagem JPG, PNG ou WEBP.` };
+    let full;
+    try { full = store.safePath(rel); } catch { return { error: `Caminho inválido: ${raw}` }; }
+    const att = (anexos || []).find((a) => relClean(a.path) === rel);
+    if (att) {
+      const buf = Buffer.from(String(att.b64 || ''), 'base64');
+      if (!fs.existsSync(full) || !fs.readFileSync(full).equals(buf)) {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, buf);
+        recordWrite(store, rel, { by: agent.id, task: taskHint });
+        rt.emit({ type: 'files' });
+        drive.schedule(store, rt);
+      }
+    }
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return { error: `Imagem não encontrada no arquivo da empresa: ${rel}` };
+    if (fs.statSync(full).size > 15 * 1024 * 1024) return { error: `A imagem ${rel} passa de 15 MB.` };
+    out.push(rel);
+  }
+  return { list: out };
+}
+const readImage = (store, rel) => ({ name: path.basename(rel), mime: mimeOf(rel), buf: fs.readFileSync(store.safePath(rel)) });
+
+// Confere e normaliza um post ou resposta antes da aprovação (o texto fica em "text", editável na aprovação).
+function prepareSocial(rt, agent, name, input, taskHint) {
+  const store = rt.store;
+  const prof = socialProfile(store);
+  if (!prof) return { error: 'Nenhum perfil do Upload-Post encontrado. Confira a integração em Integrações.' };
+  const nets = socialNets(prof);
+  const text = String(input.text ?? input.texto ?? '').trim();
+  if (!text) return { error: 'Escreva o texto (texto).' };
+  if (name === 'social_responder') {
+    const plat = String(input.plataforma || '').toLowerCase();
+    if (!uploadpost.PLATFORMS.includes(plat)) return { error: `Plataforma inválida: ${input.plataforma}` };
+    if (!input.comment_id && !input.post_id && !input.post_url) return { error: 'Informe comment_id (para responder um comentário) ou post_id/post_url (para comentar no post).' };
+    if (plat === 'instagram' && !input.comment_id) return { error: 'No Instagram só dá para responder um comentário: informe comment_id.' };
+    return { input: { plataforma: plat, comment_id: input.comment_id || undefined, post_id: input.post_id || undefined, post_url: input.post_url || undefined, comentario_original: String(input.comentario_original || '').slice(0, 1000) || undefined, text: text.slice(0, 2200) } };
+  }
+  const plats = [...new Set([].concat(input.plataformas || []).map((p) => String(p).toLowerCase().trim()))].filter(Boolean);
+  if (!plats.length) return { error: 'Escolha as redes (plataformas).' };
+  const bad = plats.filter((p) => !uploadpost.PLATFORMS.includes(p) || (nets.length && !nets.includes(p)));
+  if (bad.length) return { error: `Rede não conectada no perfil ${prof.username}: ${bad.join(', ')}. Conectadas: ${nets.map((k) => uploadpost.LABEL[k]).join(', ') || 'nenhuma'}.` };
+  const imgs = resolveImages(rt, agent, input.imagens, input._anexos, taskHint, 10);
+  if (imgs.error) return imgs;
+  if (!imgs.list.length && plats.some((p) => ['instagram', 'pinterest', 'tiktok'].includes(p))) return { error: 'Instagram, Pinterest e TikTok exigem imagem: passe pelo menos uma em imagens (gere com imagem_gerar ou use uma do arquivo da empresa).' };
+  let when = null;
+  if (input.agendar_para) {
+    const d = new Date(input.agendar_para);
+    if (Number.isNaN(+d)) return { error: 'agendar_para inválido: use o formato 2026-11-20T18:30:00 (horário de Brasília).' };
+    if (+d < Date.now() + 2 * 60000) return { error: 'agendar_para precisa ser no futuro (pelo menos alguns minutos à frente). Para publicar agora, deixe vazio.' };
+    if (+d > Date.now() + 360 * 86400000) return { error: 'Só dá para agendar até 1 ano à frente.' };
+    when = String(input.agendar_para).trim();
+  }
+  return { input: { plataformas: plats, text: text.slice(0, 5000), imagens: imgs.list, agendar_para: when || undefined, story: !!input.story && plats.includes('instagram') } };
+}
+
 const addrOf = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
 const nameOfAddr = (s) => (String(s).match(/^\s*"?([^"<]+?)"?\s*</)?.[1] || addrOf(s).split('@')[0]).trim();
 const matchesInbox =(to, inboxes) => !inboxes.length || [].concat(to || []).some((t) => inboxes.includes(addrOf(t)));
@@ -282,6 +406,8 @@ export function accessSummary(store, agent) {
     if (c.type === 'whatsapp') where = ` no número ${conn(store, 'whatsapp').account || ''} (texto livre só até 24 h após a última mensagem do cliente)`;
     if (c.type === 'google_ads') { const cfg = conn(store, 'google_ads').config || {}; where = cfg.customerId ? ` na conta ${cfg.name || cfg.customerId} (moeda ${cfg.currency || '?'}); mudanças vão para aprovação de uma pessoa` : ' (nenhuma conta escolhida ainda)'; }
     if (c.type === 'binance') where = desk.accessLine(desk.deskConfig(conn(store, 'binance').config));
+    if (c.type === 'uploadpost') { const p = socialProfile(store); where = ` no perfil "${p?.username || '?'}": ${socialLine(p) || 'nenhuma rede conectada'}${conn(store, 'uploadpost').config?.mode === 'auto' ? '; publica direto' : '; posts e respostas vão para aprovação de uma pessoa antes de sair'}`; }
+    if (IMG_TYPES.includes(c.type)) where = ` (modelo ${imageModel(conn(store, c.type)) || 'automático'}; ferramenta imagem_gerar, salva em Arquivos)`;
     lines.push(`- ${c.name}: ${perms}${where}`);
   }
   return lines.length ? `Seus acessos a sistemas externos (use as ferramentas correspondentes):\n${lines.join('\n')}\nEntregas de código em repositórios são sempre via repo_open_pr. Ao responder clientes (e-mail ou chat), seja cordial e objetivo; se não souber a resposta, diga que vai verificar e avise o responsável na empresa. Em infraestrutura, investigue logs antes de agir; redeploy, restart e mudança de variáveis afetam produção: explique o motivo no diário (send_message ao seu chefe) antes de executar.` : '';
@@ -408,6 +534,42 @@ export function toolsFor(store, agent) {
     );
   }
   if (conn(store, 'binance')) tools.push(...desk.deskTools((p) => can(store, agent, 'binance', p)));
+  const imgs = imageProviders(store, agent);
+  if (imgs.length) {
+    tools.push(T('imagem_gerar', `Cria uma imagem com IA (${imgs.map((t) => DEF[t].name.replace('Imagens com IA ', '').replace(/[()]/g, '')).join(' ou ')}) e salva no arquivo da empresa. Descreva em detalhes: assunto, composição, estilo, luz, cores da marca e, se tiver texto na arte, o texto exato entre aspas (curto). Para editar uma imagem ou criar a partir de fotos reais (produto, logo, pessoa), passe-as em referencias. Devolve o caminho do arquivo; confira o resultado antes de usar.`, {
+      descricao: S('Descrição detalhada da imagem (ou da edição, quando houver referências)'),
+      formato: { type: 'string', enum: Object.keys(imagegen.FORMATS), description: Object.entries(imagegen.FORMATS).map(([k, f]) => `${k} = ${f.label}`).join('; ') },
+      referencias: { type: 'array', items: { type: 'string' }, description: 'Opcional: até 4 imagens do arquivo da empresa usadas como base ou referência' },
+      caminho: S('Opcional: onde salvar, ex.: Marketing/Posts/2026-11-20-lancamento.jpg (padrão: Marketing/Imagens/)'),
+      ...(imgs.length > 1 ? { provedor: { type: 'string', enum: ['openai', 'gemini'], description: 'Qual IA usar (padrão: openai)' } } : {}),
+    }, ['descricao']));
+  }
+  if (can(store, agent, 'uploadpost', 'read')) {
+    const NET = { type: 'string', enum: uploadpost.PLATFORMS };
+    tools.push(
+      T('social_contas', 'Mostra as redes sociais conectadas (Instagram, Facebook, LinkedIn...) e quantos posts restam no plano.'),
+      T('social_metricas', 'Métricas das contas: seguidores, alcance, impressões, visualizações, curtidas, comentários, salvamentos e a série diária de alcance.', { plataformas: { type: 'array', items: NET, description: 'Redes a consultar' }, dias: { type: 'number', description: 'Só Facebook: janela em dias (padrão 30)' } }, ['plataformas']),
+      T('social_posts', 'Lista os posts recentes de uma rede (id, legenda, link e data), inclusive os que não foram feitos pelo IAORG.', { plataforma: NET, limite: { type: 'number', description: 'Padrão 12, máx. 50' } }, ['plataforma']),
+      T('social_metricas_post', 'Métricas de um post: curtidas, comentários, alcance, visualizações, salvamentos. Use post_id (id do post na rede, de social_posts) ou request_id (de um post publicado pelo IAORG).', { plataforma: NET, post_id: S('id do post na rede'), request_id: S('request_id devolvido ao publicar') }, ['plataforma']),
+      T('social_comentarios', 'Lê os comentários de um post (ou as respostas de um comentário, com comment_id).', { plataforma: NET, post_id: S('id do post na rede'), post_url: S('ou o link do post'), comment_id: S('Opcional: para ver as respostas deste comentário') }, ['plataforma']),
+      T('social_historico', 'Histórico do que foi publicado/agendado pela integração, com o status de cada rede. Com request_id ou job_id, mostra o status de uma publicação.', { request_id: S('Opcional'), job_id: S('Opcional: id de um post agendado') }),
+    );
+  }
+  if (can(store, agent, 'uploadpost', 'post')) {
+    tools.push(T('social_publicar', 'Publica ou agenda um post nas redes sociais. Instagram exige imagem (até 10 = carrossel). Escreva o texto pronto para publicar, com hashtags no fim quando fizer sentido. Por padrão vai para aprovação de uma pessoa antes de sair.', {
+      plataformas: { type: 'array', items: { type: 'string', enum: uploadpost.PLATFORMS }, description: 'Redes onde publicar' },
+      texto: S('Legenda/texto do post'),
+      imagens: { type: 'array', items: { type: 'string' }, description: 'Caminhos das imagens no arquivo da empresa (vazio = post só de texto, não vale para Instagram)' },
+      agendar_para: S('Opcional: data e hora no horário de Brasília, ex.: 2026-11-20T18:30:00. Vazio = publicar agora'),
+      story: { type: 'boolean', description: 'Instagram: publicar como story em vez de post no feed' },
+    }, ['plataformas', 'texto']));
+  }
+  if (can(store, agent, 'uploadpost', 'reply')) {
+    tools.push(T('social_responder', 'Responde um comentário (comment_id) ou comenta num post (post_id/post_url). No Instagram, só respostas a comentários. Por padrão vai para aprovação.', {
+      plataforma: { type: 'string', enum: uploadpost.PLATFORMS }, comment_id: S('id do comentário a responder'), post_id: S('id do post (obrigatório no TikTok)'), post_url: S('ou o link do post'),
+      texto: S('Texto da resposta'), comentario_original: S('O texto do comentário que está respondendo (aparece para quem aprova)'),
+    }, ['plataforma', 'texto']));
+  }
   return tools;
 }
 
@@ -421,6 +583,8 @@ const deny = (what) => ({ error: `Você não tem acesso para ${what}. Peça ao d
 const OUTBOUND = { email_reply: 'email', email_send: 'email', gmail_send: 'email', chat_reply: 'chat', whatsapp_reply: 'whatsapp' };
 // Mudanças que mexem em dinheiro: SEMPRE passam por uma pessoa (não dependem do modo de envio).
 const ADS_CHANGES = new Set(['ads_campaign_status', 'ads_set_budget', 'ads_add_negative']);
+// Publicações em redes sociais: aprovação de uma pessoa, a não ser que a empresa escolha "automática".
+const SOCIAL_OUT = { social_publicar: 'post', social_responder: 'reply' };
 const adsAccount = (store) => { const cfg = conn(store, 'google_ads')?.config || {}; return cfg.customerId ? { customerId: cfg.customerId, loginCustomerId: cfg.loginCustomerId || null, name: cfg.name, currency: cfg.currency } : null; };
 const waCtx = (store) => ({ key: secretOf(store, 'whatsapp'), pnid: conn(store, 'whatsapp')?.config?.phoneNumberId });
 const digits = (s) => String(s || '').replace(/\D/g, '');
@@ -444,6 +608,18 @@ async function previewOf(store, name, input) {
       const msgs = (await kapso.messages(w.key, w.pnid, { phone: input.telefone, limit: 8 })).reverse();
       const nome = msgs.find((m) => m.direction === 'inbound' && m.name)?.name;
       return { para: `${nome ? `${nome} · ` : ''}+${digits(input.telefone)} (WhatsApp)`, conversa: msgs.map((m) => `${m.direction === 'inbound' ? 'Cliente' : 'Empresa'}: ${m.text}`).join('\n').slice(0, 1500) };
+    }
+    if (name === 'social_publicar') {
+      const p = socialProfile(store);
+      const fmt = (s) => new Date(s).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+      return {
+        para: input.plataformas.map((k) => `${uploadpost.LABEL[k]}${p?.accounts?.[k]?.name ? ` (${p.accounts[k].name})` : ''}`).join(', '),
+        assunto: `${input.story ? 'Story' : input.imagens.length > 1 ? `Carrossel com ${input.imagens.length} imagens` : input.imagens.length ? 'Post com imagem' : 'Post de texto'} · ${input.agendar_para ? `agendado para ${fmt(input.agendar_para)}` : 'publicar ao aprovar'}`,
+        imagens: input.imagens,
+      };
+    }
+    if (name === 'social_responder') {
+      return { para: `Comentário no ${uploadpost.LABEL[input.plataforma] || input.plataforma}`, assunto: input.comment_id ? 'resposta a um comentário' : 'comentário no post', ...(input.comentario_original ? { conversa: `Comentário: ${input.comentario_original}` } : {}) };
     }
     if (ADS_CHANGES.has(name)) {
       const acc = adsAccount(store);
@@ -475,19 +651,20 @@ async function queueApproval(rt, agent, name, input, extra = null) {
     ads_add_negative: () => `Adicionar a palavra negativa "${input.keyword}" (${input.match_type || 'PHRASE'}) na campanha ${input.campaign_id}.`,
   }[name];
   const item = {
-    id: uid('ap'), ts: Date.now(), status: 'pending', agentId: agent.id, tool: name, channel: OUTBOUND[name] || (ADS_CHANGES.has(name) ? 'ads' : 'outro'),
+    id: uid('ap'), ts: Date.now(), status: 'pending', agentId: agent.id, tool: name, channel: OUTBOUND[name] || (ADS_CHANGES.has(name) ? 'ads' : SOCIAL_OUT[name] ? 'social' : 'outro'),
     input, text: adsText ? `${adsText()}\nMotivo: ${input.reason || '—'}` : String(input.text || ''), preview: await previewOf(store, name, input),
     readOnlyText: !!adsText,
   };
   (store.state.approvals ||= []).push(item);
   if (store.state.approvals.length > 300) store.state.approvals.splice(0, store.state.approvals.length - 300);
   store.save();
-  const what = { chat: 'uma resposta no chat', email: 'um e-mail', whatsapp: 'uma resposta no WhatsApp', ads: 'uma mudança no Google Ads' }[item.channel] || 'uma ação';
+  const what = { chat: 'uma resposta no chat', email: 'um e-mail', whatsapp: 'uma resposta no WhatsApp', ads: 'uma mudança no Google Ads', social: name === 'social_publicar' ? 'um post nas redes sociais' : 'uma resposta nas redes sociais' }[item.channel] || 'uma ação';
   rt.logEvent('task', agent.id, `${agent.name} pediu aprovação de ${what}${item.preview.para ? ` — ${item.preview.para}` : ''}`);
   for (const p of store.state.agents.filter((a) => a.kind === 'human' && ['owner', 'admin'].includes(a.appRole))) {
     rt.emit({ type: 'notify', to: p.id, text: `${agent.name} pediu aprovação de ${what}` });
   }
   rt.pushSnapshot();
+  if (item.channel === 'social') return { ok: true, aguardando_aprovacao: true, aprovacao_id: item.id, aviso: 'Foi para aprovação de uma pessoa (Minha mesa) e só sai depois de aprovado; quem aprova pode editar o texto. Não repita o pedido.' };
   return item.channel === 'ads'
     ? { ok: true, aguardando_aprovacao: true, aviso: 'A mudança foi para aprovação de uma pessoa e só vale depois de aprovada. Não repita o pedido; informe o que propôs e por quê.' }
     : { ok: true, aguardando_aprovacao: true, aviso: 'Sua resposta virou rascunho e só será enviada depois que uma pessoa aprovar. Não reenvie.' };
@@ -530,6 +707,12 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
   if (desk.DESK_TOOLS.has(name)) {
     try { return await desk.executeDeskTool(rt, agent, name, input, opts, { can, conn, secretOf, deny, queueApproval }); }
     catch (e) { return { error: `Binance: ${e.message}` }; }
+  }
+  if (name === 'imagem_gerar') {
+    try { return await generateImage(rt, agent, input, taskHint, opts); } catch (e) { return { error: e.message }; }
+  }
+  if (name.startsWith('social_')) {
+    try { return await socialTool(rt, agent, name, input, taskHint, opts); } catch (e) { return { error: e.message }; }
   }
   switch (name) {
     case 'repo_list_files':
@@ -786,6 +969,128 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
   }
 }
 
+// ---------------- imagens com IA ----------------
+async function generateImage(rt, agent, input, taskHint, opts) {
+  const store = rt.store;
+  const provs = imageProviders(store, agent);
+  if (!provs.length) return deny('criar imagens');
+  const want = input.provedor === 'gemini' ? 'gemini_images' : input.provedor === 'openai' ? 'openai_images' : null;
+  const type = want && provs.includes(want) ? want : provs[0];
+  const provider = type === 'openai_images' ? 'openai' : 'gemini';
+  const c = conn(store, type);
+  const prompt = String(input.descricao || '').trim();
+  if (!prompt) return { error: 'Descreva a imagem (descricao).' };
+  const refs = resolveImages(rt, agent, input.referencias, input._anexos, taskHint, 4);
+  if (refs.error) return refs;
+  const format = imagegen.FORMATS[input.formato] ? input.formato : 'quadrado';
+  rt.setStatus(agent.id, { status: 'working', bubble: `Criando imagem: ${prompt.slice(0, 70)}` });
+  const img = await imagegen.generate(provider, secretOf(store, type), { model: imageModel(c), prompt, format, refs: refs.list.map((r) => readImage(store, r)) });
+  const ext = imagegen.extOf(img.mime);
+  let rel = relClean(input.caminho);
+  rel = rel ? rel.replace(/\.[a-z0-9]+$/i, '') : `Marketing/Imagens/${today()}-${slugify(prompt)}`;
+  rel = rel.split('/').map((s) => s.replace(/[\\:*?"<>|\u0000-\u001f]/g, '').trim()).filter(Boolean).join('/');
+  let final = `${rel}.${ext}`;
+  for (let n = 2; fs.existsSync(store.safePath(final)); n++) final = `${rel}-${n}.${ext}`;
+  const full = store.safePath(final);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, img.buf);
+  recordWrite(store, final, { by: agent.id, task: taskHint });
+  (store.state.imageLog ||= []).push({ ts: Date.now(), agentId: agent.id, provider, model: img.model, path: final, task: taskHint || null });
+  if (store.state.imageLog.length > 500) store.state.imageLog.splice(0, store.state.imageLog.length - 500);
+  store.save();
+  rt.emit({ type: 'files' });
+  drive.schedule(store, rt);
+  rt.logEvent('file', agent.id, `${agent.name} criou uma imagem com IA: ${final}`);
+  return {
+    ok: true, arquivo: final, provedor: provider, modelo: img.model, formato: format, bytes: img.buf.length,
+    ...(img.revisedPrompt ? { descricao_usada: img.revisedPrompt } : {}),
+    aviso: opts.fromJob ? `Salva em Arquivos e em /work/entregas/${final}. Confira a imagem (texto legível, sem erros, cores da marca) antes de usar; se não ficou boa, gere de novo ajustando a descrição.` : 'Salva em Arquivos. Use o caminho em social_publicar para postar.',
+    ...(opts.fromJob ? { _salvar: [{ path: final, b64: img.buf.toString('base64'), mime: img.mime }] } : {}),
+  };
+}
+
+// ---------------- redes sociais (Upload-Post) ----------------
+async function socialTool(rt, agent, name, input, taskHint, opts) {
+  const store = rt.store;
+  const c = conn(store, 'uploadpost');
+  const need = SOCIAL_OUT[name] || 'read';
+  if (!can(store, agent, 'uploadpost', need)) return deny({ read: 'ver as redes sociais', post: 'publicar nas redes sociais', reply: 'responder comentários nas redes sociais' }[need]);
+  const key = secretOf(store, 'uploadpost');
+  const prof = socialProfile(store);
+  const user = prof?.username;
+  if (!user) return { error: 'Nenhum perfil do Upload-Post encontrado. Confira a integração em Integrações.' };
+  const say = (bubble) => rt.setStatus(agent.id, { status: 'working', bubble });
+  const net = (p) => String(p || '').toLowerCase();
+
+  if (SOCIAL_OUT[name] && !opts.approved) {
+    const prep = prepareSocial(rt, agent, name, input, taskHint);
+    if (prep.error) return prep;
+    if (opts.forceApproval || c.config?.mode !== 'auto') return queueApproval(rt, agent, name, prep.input);
+    input = prep.input;
+  }
+
+  switch (name) {
+    case 'social_contas': {
+      say('Conferindo as redes sociais');
+      const [profiles, me] = await Promise.all([uploadpost.listProfiles(key), uploadpost.verify(key).catch(() => ({}))]);
+      const p = profiles.find((x) => x.username === user) || prof;
+      return { perfil: user, redes: socialNets(p).map((k) => ({ rede: k, conta: p.accounts[k].name || p.accounts[k].handle || '', precisa_reconectar: p.accounts[k].reauth })), plano: me.plan || undefined, publicacao: c.config?.mode === 'auto' ? 'automática' : 'com aprovação de uma pessoa' };
+    }
+    case 'social_metricas': {
+      const plats = [].concat(input.plataformas || []).map(net).filter((p) => uploadpost.PLATFORMS.includes(p));
+      if (!plats.length) return { error: 'Informe as redes (plataformas).' };
+      say(`Métricas: ${plats.map((p) => uploadpost.LABEL[p]).join(', ')}`);
+      return await uploadpost.analytics(key, user, { platforms: plats, facebookPageId: c.config?.facebookPageId, linkedinPageUrn: c.config?.linkedinPageId ? `urn:li:organization:${c.config.linkedinPageId}` : undefined, days: input.dias });
+    }
+    case 'social_posts': {
+      say(`Lendo os posts do ${uploadpost.LABEL[net(input.plataforma)] || input.plataforma}`);
+      const d = await uploadpost.media(key, user, { platform: net(input.plataforma), limit: Math.min(50, +input.limite || 12), linkedinPageUrn: c.config?.linkedinPageId ? `urn:li:organization:${c.config.linkedinPageId}` : undefined });
+      const items = d.media || d.data || d.items || d.posts || [];
+      return { posts: items.map(({ media_url, thumbnail_url, ...m }) => m) };
+    }
+    case 'social_metricas_post': {
+      if (!input.post_id && !input.request_id) return { error: 'Informe post_id ou request_id.' };
+      say('Lendo as métricas do post');
+      return await uploadpost.postAnalytics(key, user, { platform: net(input.plataforma), postId: input.post_id, requestId: input.request_id });
+    }
+    case 'social_comentarios': {
+      if (!input.post_id && !input.post_url) return { error: 'Informe post_id ou post_url.' };
+      say('Lendo comentários');
+      return await uploadpost.comments(key, user, { platform: net(input.plataforma), postId: input.post_id, postUrl: input.post_url, commentId: input.comment_id });
+    }
+    case 'social_historico': {
+      say('Conferindo as publicações');
+      if (input.request_id || input.job_id) return await uploadpost.status(key, { requestId: input.request_id, jobId: input.job_id });
+      const d = await uploadpost.history(key, { limit: 20 });
+      return { historico: d.history || d.data || d.items || d, publicados_pelo_iaorg: (store.state.socialLog || []).slice(-15) };
+    }
+    case 'social_publicar': {
+      say(`Publicando em ${input.plataformas.map((p) => uploadpost.LABEL[p]).join(', ')}`);
+      const r = await uploadpost.publish(key, {
+        user, platforms: input.plataformas, text: input.text, images: input.imagens.map((p) => readImage(store, p)), scheduledDate: input.agendar_para,
+        facebookPageId: c.config?.facebookPageId || undefined, linkedinPageId: c.config?.linkedinPageId || undefined, stories: input.story,
+      });
+      (store.state.socialLog ||= []).push({ ts: Date.now(), agentId: agent.id, redes: input.plataformas, texto: input.text.slice(0, 200), imagens: input.imagens, agendado: input.agendar_para || null, request_id: r.request_id, job_id: r.job_id, links: Object.fromEntries(Object.entries(r.resultados).map(([k, v]) => [k, v.url])) });
+      if (store.state.socialLog.length > 300) store.state.socialLog.splice(0, store.state.socialLog.length - 300);
+      store.save();
+      const links = Object.entries(r.resultados).filter(([, v]) => v.url).map(([k, v]) => `${uploadpost.LABEL[k] || k}: ${v.url}`);
+      const fails = Object.entries(r.resultados).filter(([, v]) => !v.ok).map(([k, v]) => `${uploadpost.LABEL[k] || k} (${v.erro || 'falhou'})`);
+      rt.logEvent('message', agent.id, r.agendado
+        ? `${agent.name} agendou um post em ${input.plataformas.map((p) => uploadpost.LABEL[p]).join(', ')} para ${input.agendar_para}`
+        : `${agent.name} publicou nas redes sociais${links.length ? `: ${links.join(' · ')}` : ''}${fails.length ? ` · falhou: ${fails.join(', ')}` : ''}`, links[0] ? { url: links[0].split(': ')[1] } : undefined);
+      return { ok: !fails.length, ...r };
+    }
+    case 'social_responder': {
+      say(`Respondendo no ${uploadpost.LABEL[input.plataforma]}`);
+      const r = await uploadpost.reply(key, user, { platform: input.plataforma, commentId: input.comment_id, postId: input.post_id, postUrl: input.post_url, message: input.text });
+      rt.logEvent('message', agent.id, `${agent.name} respondeu um comentário no ${uploadpost.LABEL[input.plataforma]}: ${String(input.text).slice(0, 120)}`);
+      return { ok: true, id: r.id || null };
+    }
+    default:
+      return undefined;
+  }
+}
+
 // ---------------- caixas de entrada: avisa os agentes quando chega e-mail ----------------
 export function startInboxPoller({ allCompanies, runtimeFor }) {
   const tick = async () => {
@@ -897,6 +1202,24 @@ async function pollWhatsApp(store, runtimeFor) {
   }
 }
 
+// Valida a chave e descobre o que ela enxerga (perfis e redes do Upload-Post; modelos de imagem). Ajusta config.
+async function refreshDiscovery(type, secret, config) {
+  if (type === 'uploadpost') {
+    const v = await uploadpost.verify(secret);
+    if (!v.profiles.length) throw new Error('Nenhum perfil no Upload-Post. Crie um perfil e conecte as redes em app.upload-post.com.');
+    config.profiles = v.profiles.slice(0, 20);
+    if (config.profile && !v.profiles.some((p) => p.username === config.profile)) throw new Error(`Perfil "${config.profile}" não existe. Perfis: ${v.profiles.map((p) => p.username).join(', ')}.`);
+    config.mode = config.mode === 'auto' ? 'auto' : 'approval';
+    const p = v.profiles.find((x) => x.username === config.profile) || v.profiles[0];
+    return `${p.username} · ${socialLine(p) || 'nenhuma rede conectada'}`;
+  }
+  const v = type === 'openai_images' ? await imagegen.openaiVerify(secret) : await imagegen.geminiVerify(secret);
+  if (config.model && !v.models.includes(config.model)) throw new Error(`Modelo "${config.model}" não disponível nesta chave. Disponíveis: ${v.models.join(', ')}.`);
+  config.models = v.models.slice(0, 30);
+  config.autoModel = v.model;
+  return `modelo ${config.model || v.model}`;
+}
+
 // ---------------- rotas ----------------
 const oauthStates = new Map(); // state -> { companyId, type, createdAt }
 
@@ -956,6 +1279,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
         config.numbers = v.numbers.map(({ id, display, name }) => ({ id, display, name })).slice(0, 20);
         account = [v.number.display, v.number.name].filter(Boolean).join(' · ');
       }
+      if (['uploadpost', 'openai_images', 'gemini_images'].includes(def.type)) account = await refreshDiscovery(def.type, secret, config);
       if (def.type === 'telegram') {
         const v = await telegram.verify(secret);
         config.botUsername = v.username;
@@ -1015,6 +1339,13 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
       c.config.pairs = d.pairs.join(', ');
       c.config.mode = d.mode;
       runtimeFor(store).logEvent('system', req.member.id, `Limites da mesa atualizados: ${d.pairs.join(', ')} · até ${d.maxOrderUsdt} USDT/ordem · risco ${d.maxRiskUsdt} USDT · perda/dia ${d.maxDailyLossUsdt} USDT · ${d.maxPositions} posições · execução ${d.mode === 'auto' ? 'automática' : 'com aprovação'}.`);
+    } else if (['uploadpost', 'openai_images', 'gemini_images'].includes(req.params.type)) {
+      const def = DEF[req.params.type];
+      const next = { ...c.config };
+      for (const f of def.configFields) if (req.body?.[f.key] !== undefined) next[f.key] = str(req.body[f.key], 200);
+      try { c.account = await refreshDiscovery(def.type, decrypt(c.secret), next); } catch (e) { return bad(res, e.message); }
+      c.config = next;
+      c.error = '';
     } else if (req.params.type === 'google_ads') {
       const want = str(req.body?.customerId, 20).replace(/\D/g, '');
       const list = await gads.accounts(await googleToken(store, 'google_ads'));
