@@ -16,13 +16,81 @@ const copy = (from, to) => {
   fs.cpSync(from, path.join(out, to), { recursive: true });
 };
 
-// páginas: o mesmo HTML do app, trocado para o modo "lista de espera"
-const pages = { 'index.html': 'landing.html', 'privacidade.html': 'privacidade.html', 'termos.html': 'termos.html' };
-for (const [dest, src] of Object.entries(pages)) {
-  const html = fs.readFileSync(path.join(pub, src), 'utf8');
-  if (!html.includes('data-mode="app"')) throw new Error(`${src} sem data-mode="app"`);
-  fs.writeFileSync(path.join(out, dest), html.replace('data-mode="app"', 'data-mode="waitlist"'));
+// Endereço público do site. As tags de busca e de compartilhamento só entram aqui (e não no HTML
+// de public/), porque o mesmo HTML também é servido por instalações próprias em outros endereços.
+const SITE = (process.env.SITE_URL || 'https://iaorg.app').replace(/\/+$/, '');
+const REPO = 'https://github.com/leandrolima123/iaorg';
+const OG_IMAGE = `${SITE}/brand/og-iaorg.png`;
+const PUBLISHED = '2026-11-16';
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const meta = (html, re) => (html.match(re) || [])[1] || '';
+const ldJson = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
+
+const org = { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'IAORG', url: `${SITE}/`, logo: `${SITE}/brand/iaorg-512.png`, sameAs: [REPO] };
+const site = { '@type': 'WebSite', '@id': `${SITE}/#site`, name: 'IAORG', url: `${SITE}/`, inLanguage: 'pt-BR', publisher: { '@id': `${SITE}/#org` } };
+
+// vídeos de demonstração publicados (os "Em breve" ficam de fora)
+const iso = (d) => { const [m, s] = String(d || '').split(':').map(Number); return Number.isFinite(m) && Number.isFinite(s) ? `PT${m}M${s}S` : undefined; };
+const { demos } = JSON.parse(fs.readFileSync(path.join(pub, 'videos', 'demos.json'), 'utf8'));
+const videos = demos.filter((d) => d.src).map((d) => ({
+  '@type': 'VideoObject', name: `${d.titulo} — IAORG`, description: d.descricao, thumbnailUrl: `${SITE}${d.poster}`,
+  contentUrl: `${SITE}${d.src}`, uploadDate: d.publicado || PUBLISHED, duration: iso(d.duracao), inLanguage: 'pt-BR',
+}));
+
+const pages = {
+  'index.html': { src: 'landing.html', url: `${SITE}/`, ogType: 'website', priority: '1.0', graph: (title, desc) => [org, site,
+    { '@type': 'SoftwareApplication', name: 'IAORG', url: `${SITE}/`, description: desc, image: OG_IMAGE,
+      applicationCategory: 'BusinessApplication', operatingSystem: 'Linux, macOS, Windows (Docker)', inLanguage: 'pt-BR',
+      license: `${REPO}/blob/main/LICENSE`, offers: { '@type': 'Offer', price: '0', priceCurrency: 'BRL' }, publisher: { '@id': `${SITE}/#org` } },
+    { '@type': 'SoftwareSourceCode', name: 'IAORG', codeRepository: REPO, programmingLanguage: 'JavaScript', license: `${REPO}/blob/main/LICENSE` },
+    ...videos] },
+  'privacidade.html': { src: 'privacidade.html', url: `${SITE}/privacidade`, ogType: 'article', priority: '0.3' },
+  'termos.html': { src: 'termos.html', url: `${SITE}/termos`, ogType: 'article', priority: '0.3' },
+};
+
+// páginas: o mesmo HTML do app, trocado para o modo "lista de espera" e com as tags de busca
+const today = new Date().toISOString().slice(0, 10);
+for (const [dest, p] of Object.entries(pages)) {
+  let html = fs.readFileSync(path.join(pub, p.src), 'utf8');
+  if (!html.includes('data-mode="app"')) throw new Error(`${p.src} sem data-mode="app"`);
+  const title = meta(html, /<title>([^<]*)<\/title>/);
+  const desc = meta(html, /<meta name="description" content="([^"]*)"/);
+  if (!title || !desc) throw new Error(`${p.src} sem <title> ou description`);
+  const ogTitle = meta(html, /<meta property="og:title" content="([^"]*)"/) || title;
+  const ogDesc = meta(html, /<meta property="og:description" content="([^"]*)"/) || desc;
+  const graph = p.graph ? p.graph(title, desc) : [org, site, { '@type': 'WebPage', name: title, description: desc, url: p.url, inLanguage: 'pt-BR', isPartOf: { '@id': `${SITE}/#site` } }];
+  const tags = [
+    `<link rel="canonical" href="${p.url}" />`,
+    '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />',
+    `<meta property="og:url" content="${p.url}" />`,
+    '<meta property="og:site_name" content="IAORG" />',
+    '<meta property="og:locale" content="pt_BR" />',
+    `<meta property="og:image" content="${OG_IMAGE}" />`,
+    '<meta property="og:image:width" content="1200" />',
+    '<meta property="og:image:height" content="630" />',
+    `<meta property="og:image:alt" content="${esc('IAORG: Dê a ordem. A equipe toca a obra. Agentes de IA e pessoas num escritório 3D.')}" />`,
+    '<meta name="twitter:card" content="summary_large_image" />',
+    `<meta name="twitter:title" content="${ogTitle}" />`,
+    `<meta name="twitter:description" content="${ogDesc}" />`,
+    `<meta name="twitter:image" content="${OG_IMAGE}" />`,
+    ldJson({ '@context': 'https://schema.org', '@graph': graph }),
+  ];
+  // og:type, og:title e og:description: usa os do HTML ou completa com o título e a descrição
+  if (!html.includes('property="og:type"')) tags.push(`<meta property="og:type" content="${p.ogType}" />`);
+  if (!html.includes('property="og:title"')) tags.push(`<meta property="og:title" content="${title}" />`);
+  if (!html.includes('property="og:description"')) tags.push(`<meta property="og:description" content="${desc}" />`);
+  html = html.replace('data-mode="app"', 'data-mode="waitlist"').replace('</head>', `  ${tags.join('\n  ')}\n</head>`);
+  fs.writeFileSync(path.join(out, dest), html);
+  p.lastmod = today;
 }
+
+// sitemap e robots
+fs.writeFileSync(path.join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${Object.values(pages).map((p) => `  <url><loc>${p.url}</loc><lastmod>${p.lastmod}</lastmod><priority>${p.priority}</priority></url>`).join('\n')}
+</urlset>
+`);
+fs.writeFileSync(path.join(out, 'robots.txt'), `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: ${SITE}/sitemap.xml\n`);
 
 // arquivos do site
 for (const f of ['site.css', 'avatars.js']) copy(path.join(pub, f), f);
@@ -41,7 +109,6 @@ for (const fam of ['archivo', 'barlow-condensed']) {
   for (const f of fs.readdirSync(dir).filter((x) => /-latin-\d+-normal\.woff2$/.test(x))) copy(path.join(dir, f), `vendor/fonts/${fam}/${f}`);
 }
 
-fs.writeFileSync(path.join(out, 'robots.txt'), 'User-agent: *\nDisallow: /admin/\nDisallow: /api/\n');
 
 let n = 0, bytes = 0;
 const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else { n++; bytes += fs.statSync(p).size; } } };

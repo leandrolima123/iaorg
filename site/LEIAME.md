@@ -20,7 +20,9 @@ Abra http://localhost:8090.
 O Netlify serve a landing como site estático e atende o formulário com uma função (`netlify/functions/interesse.mjs`). Os cadastros ficam no **Netlify Blobs**, um registro por e-mail e sem IP. A configuração está toda no `netlify.toml` da raiz:
 - **Build:** o comando `node site/netlify-build.mjs` monta `dist-netlify/` com as páginas em modo "lista de espera".
 - **Cabeçalhos:** os de segurança e de cache.
-- **Redirecionamentos:** `/site`, `/privacy` e `/terms`.
+- **Redirecionamentos:** `/site`, `/privacy` e `/terms`, além de `www.iaorg.app` e `iaorg.netlify.app`, que vão para `https://iaorg.app`.
+- **Busca e compartilhamento:** o build acrescenta às páginas a URL canônica, as tags Open Graph e do X, os dados estruturados (organização, software, código-fonte e os vídeos publicados em `public/videos/demos.json`), além de `sitemap.xml` e `robots.txt`. Essas tags ficam só no build, e não no HTML de `public/`, porque instalações próprias servem o mesmo HTML em outros endereços. Para publicar em outro domínio, defina `SITE_URL`.
+- **Imagens de compartilhamento:** `public/brand/og-iaorg.png` (1200×630), `iaorg-512.png` e `apple-touch-icon.png`. Para gerar de novo, rode `node scripts/capas/social.mjs`, que precisa do Playwright.
 
 **Pelo GitHub (recomendado, publica de novo a cada push):**
 1. No Netlify, clique em **Add new project → Import an existing project → GitHub** e escolha `leandrolima123/iaorg`.
@@ -42,6 +44,7 @@ Na primeira vez, o CLI pergunta se é para criar um projeto novo ou ligar a um e
 |---|---|---|
 | `ADMIN_PASSWORD` | Senha para baixar a lista em `/admin/interessados.csv`. Sem ela, a exportação fica desligada. | Recomendada |
 | `RESEND_API_KEY`, `LEADS_FROM`, `LEADS_NOTIFY_TO` | Aviso por e-mail a cada novo cadastro, como no Railway. | Não |
+| `SITE_URL` | Endereço público usado na URL canônica, no sitemap e nas prévias. O padrão é `https://iaorg.app`. | Não |
 
 No plano gratuito do Netlify, os vídeos (cerca de 5 MB) contam na banda mensal.
 
