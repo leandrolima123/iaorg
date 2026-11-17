@@ -12,6 +12,19 @@
 [functions]
   node_bundler = "esbuild"
 
+# um endereço só para o Google: www e o subdomínio do Netlify vão para https://iaorg.app
+[[redirects]]
+  from = "https://www.iaorg.app/*"
+  to = "https://iaorg.app/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://iaorg.netlify.app/*"
+  to = "https://iaorg.app/:splat"
+  status = 301
+  force = true
+
 # endereços antigos e alternativos
 [[redirects]]
   from = "/site"
