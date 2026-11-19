@@ -15,6 +15,16 @@
   <script type="importmap">
     { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
   </script>
+  <!-- 3D do topo: baixa já os scripts e o primeiro personagem com as animações que a landing usa,
+       em vez de esperar o script chegar em cada import (antes era uma fila de ~4 s). -->
+  <link rel="modulepreload" href="/vendor/three/build/three.module.js" />
+  <link rel="modulepreload" href="/avatars.js" />
+  <link rel="modulepreload" href="/vendor/three/examples/jsm/loaders/GLTFLoader.js" />
+  <link rel="modulepreload" href="/vendor/three/examples/jsm/utils/SkeletonUtils.js" />
+  <link rel="modulepreload" href="/vendor/three/examples/jsm/utils/BufferGeometryUtils.js" />
+  <link rel="preload" as="fetch" crossorigin="anonymous" href="/assets/kaykit/animations/Rig_Medium_General.glb" />
+  <link rel="preload" as="fetch" crossorigin="anonymous" href="/assets/kaykit/animations/Rig_Medium_Simulation.glb" />
+  <link rel="preload" as="fetch" crossorigin="anonymous" href="/assets/kaykit/characters/Knight.glb" />
   <style>
     .eyebrow { font: 700 .875rem/1 var(--font-sign); letter-spacing: .14em; text-transform: uppercase; color: var(--sign); margin: 0 0 16px; }
     .display { font: 700 clamp(2.5rem, min(7.4vw, 9vh), 5.5rem)/1.02 var(--font); letter-spacing: -.035em; margin: 0; text-wrap: balance; }
@@ -1107,19 +1117,20 @@
           ring.add(g);
           return { g, ch: null, grow: 0 };
         });
+        // Todos carregam ao mesmo tempo (o da frente primeiro na fila) e cada um entra em cena assim que fica pronto.
+        // Só as animações que a landing usa (Idle_A e Waving), não os 4 arquivos.
         const order = [...TEAM.keys()].sort((a, b) => Math.min(a, N - a) - Math.min(b, N - b));
-        (async () => {
-          for (const i of order) {
-            try {
-              const m = TEAM[i];
-              const ch = await buildCharacter({ char: m.char, outfit: m.color === '#ffffff' ? '' : 'agent', scale: 1 }, `landing-${i}`, m.color);
+        for (const i of order) {
+          const m = TEAM[i];
+          buildCharacter({ char: m.char, outfit: m.color === '#ffffff' ? '' : 'agent', scale: 1 }, `landing-${i}`, m.color, { anims: ['General', 'Simulation'] })
+            .then((ch) => {
               ch.root.scale.setScalar(reduced ? 1 : 0.001);
               ch.play('Idle_A', { fade: 0 });
               slots[i].g.add(ch.root); slots[i].ch = ch;
-              if (i === order[0]) stage.classList.add('ready');
-            } catch (err) { console.warn('personagem não carregou', err); }
-          }
-        })();
+              stage.classList.add('ready');
+            })
+            .catch((err) => console.warn('personagem não carregou', err));
+        }
 
         const size = () => {
           const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
@@ -1614,7 +1625,7 @@
       (async () => {
         for (const s of ST) {
           try {
-            const ch = await buildCharacter({ char: s.char, outfit: s.color === '#ffffff' ? '' : 'agent', scale: 1 }, `story-${s.k}`, s.color);
+            const ch = await buildCharacter({ char: s.char, outfit: s.color === '#ffffff' ? '' : 'agent', scale: 1 }, `story-${s.k}`, s.color, { anims: ['General', 'Simulation'] });
             ch.root.scale.setScalar(0.001);
             ch.play('Idle_A', { fade: 0 });
             s.g.add(ch.root); s.ch = ch; s.top = (ch.topY || 2) + 0.2;

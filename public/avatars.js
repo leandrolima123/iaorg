@@ -31,7 +31,10 @@ export const ITEMS = [
   { key: 'mug', label: 'Caneca', file: 'items/mug_full.gltf' },
   { key: 'book', label: 'Caderno', file: 'items/spellbook_closed.gltf' },
 ];
-const ANIM_FILES = ['General', 'MovementBasic', 'Simulation', 'Tools'].map((n) => `animations/Rig_Medium_${n}.glb`);
+// Arquivos de animação (Rig_Medium): General tem Idle_A; Simulation tem Waving e sentar; MovementBasic, andar;
+// Tools, trabalhar. Quem só precisa de parte deles (ex.: a landing) passa { anims } e não espera os outros.
+export const ANIM_SETS = ['General', 'MovementBasic', 'Simulation', 'Tools'];
+const animFile = (n) => `animations/Rig_Medium_${n}.glb`;
 const TARGET_HEIGHT = 2.05; // mesma altura dos bonecos antigos (cabe nas mesas e cadeiras)
 const SEAT_Y = 0.64; // altura do assento das cadeiras do escritório
 
@@ -41,14 +44,23 @@ const load = (url) => {
   if (!cache.has(url)) cache.set(url, new Promise((ok, fail) => loader.load(`${BASE}/${url}`, ok, undefined, fail)));
   return cache.get(url);
 };
-let clipsP = null;
-function clips() {
-  clipsP ||= Promise.all(ANIM_FILES.map(load)).then((gs) => {
-    const m = new Map();
-    for (const g of gs) for (const c of g.animations) if (c.name !== 'T-Pose' && !m.has(c.name)) m.set(c.name, c);
-    return m;
-  });
-  return clipsP;
+const clipsBySet = new Map();
+function clips(sets = ANIM_SETS) {
+  const key = sets.join(',');
+  if (!clipsBySet.has(key)) {
+    clipsBySet.set(key, Promise.all(sets.map((n) => load(animFile(n)))).then((gs) => {
+      const m = new Map();
+      for (const g of gs) for (const c of g.animations) if (c.name !== 'T-Pose' && !m.has(c.name)) m.set(c.name, c);
+      return m;
+    }));
+  }
+  return clipsBySet.get(key);
+}
+
+/** Começa a baixar personagens e animações antes de precisar deles (não espera). */
+export function warm(chars = [], sets = ANIM_SETS) {
+  for (const n of sets) load(animFile(n)).catch(() => {});
+  for (const k of chars) { const c = CHARACTERS.find((x) => x.key === k); if (c) load(`characters/${c.file}`).catch(() => {}); }
 }
 
 // Caixa do personagem na pose atual (vértices com o esqueleto aplicado), no espaço do próprio modelo.
@@ -153,10 +165,10 @@ export function preview(canvas) {
  * Monta um personagem pronto para animar. color = cor do agente (para a roupa, se escolhido).
  * Devolve { root, mixer, play(name), update(dt), bones, sitY, dispose() }.
  */
-export async function buildCharacter(lookIn, id, color) {
+export async function buildCharacter(lookIn, id, color, { anims } = {}) {
   const look = normalizeLook(lookIn, id);
   const c = CHARACTERS.find((x) => x.key === look.char);
-  const [g, clipMap] = await Promise.all([load(`characters/${c.file}`), clips()]);
+  const [g, clipMap] = await Promise.all([load(`characters/${c.file}`), clips(anims)]);
   const model = cloneSkinned(g.scene);
   // materiais próprios (para tingir só este agente) e sombras
   const tint = look.outfit === 'agent' ? new THREE.Color(color || '#ffffff') : look.outfit && /^#[0-9a-f]{6}$/i.test(look.outfit) ? new THREE.Color(look.outfit) : null;
