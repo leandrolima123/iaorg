@@ -136,8 +136,16 @@ docker compose --profile build build workbench
 Suba tudo:
 
 ```bash
-docker compose up -d --build
+./scripts/up.sh
 ```
+
+O script roda `docker compose up -d --build` e, no Windows com WSL, faz um ajuste extra no `runner` (veja o quadro abaixo). No Linux e no macOS, `docker compose up -d --build` direto dá no mesmo.
+
+> **Windows com WSL e Docker Desktop: o `runner` não sobe ao ligar o PC?**
+>
+> **Causa.** Um container criado pelo `docker` do WSL grava a montagem do `/var/run/docker.sock` apontando para dentro da distro (`…/docker-desktop-bind-mounts/Ubuntu/docker.sock`). Ao ligar o computador, o Docker Desktop sobe os containers antes da distro. A montagem falha com `not a directory` (exit 127), e a política de reinício não tenta de novo.
+>
+> **Correção.** O `./scripts/up.sh` detecta isso e recria o `runner` pelo `docker.exe` do Windows. Assim a montagem passa a usar o socket interno do Docker Desktop, que sempre existe. Se você subir com `docker compose` direto no WSL e o `runner` for recriado, rode o script de novo.
 
 | Serviço | Endereço |
 |---|---|
