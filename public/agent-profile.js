@@ -122,17 +122,24 @@ export async function renderProfile(root, ctx) {
       $$('.seg input', body).forEach((r) => r.addEventListener('change', () => { draft.sendMode[r.name.replace('send_', '')] = r.value; markDirty(); }));
     },
     model: () => {
-      body.innerHTML = `<p class="hint">Modelo e profundidade só deste agente. Vazio = usa o padrão da empresa (${esc(data.companyModel)}).</p>
-        ${(() => {
-          const opt = (m) => `
-          <label class="option"><input type="radio" name="model" value="${m.id}" ${draft.model === m.id ? 'checked' : ''} ${dis}><b>${esc(m.label)}</b><span class="hint">${esc(m.note)}</span>${m.price ? `<span class="hint num">US$ ${String(m.price[0]).replace('.', ',')} / ${String(m.price[1]).replace('.', ',')} por 1 mi tokens</span>` : ''}</label>`;
-          const old = data.models.filter((m) => m.legacy);
-          return `<div class="options">${[{ id: '', label: 'Padrão da empresa', note: data.companyModel, price: null }, ...data.models.filter((m) => !m.legacy)].map(opt).join('')}</div>
-          ${old.length ? `<details class="legacy-models" ${old.some((m) => m.id === draft.model) ? 'open' : ''}><summary>Modelos da geração anterior (${old.length})</summary><div class="options">${old.map(opt).join('')}</div></details>` : ''}`;
-        })()}
+      const labelOf = (id) => data.models.find((m) => m.id === id)?.label || id;
+      // Dois grupos: a oficina (trabalho de verdade) e a conversa (triagem, respostas curtas e reuniões).
+      const group = (key, name, defNote) => {
+        const opt = (m) => `
+          <label class="option"><input type="radio" name="${name}" value="${m.id}" ${draft[key] === m.id ? 'checked' : ''} ${dis}><b>${esc(m.label)}</b><span class="hint">${esc(m.note)}</span>${m.price ? `<span class="hint num">US$ ${String(m.price[0]).replace('.', ',')} / ${String(m.price[1]).replace('.', ',')} por 1 mi tokens</span>` : ''}</label>`;
+        const old = data.models.filter((m) => m.legacy);
+        return `<div class="options">${[{ id: '', label: 'Padrão', note: defNote, price: null }, ...data.models.filter((m) => !m.legacy)].map(opt).join('')}</div>
+          ${old.length ? `<details class="legacy-models" ${old.some((m) => m.id === draft[key]) ? 'open' : ''}><summary>Modelos da geração anterior (${old.length})</summary><div class="options">${old.map(opt).join('')}</div></details>` : ''}`;
+      };
+      body.innerHTML = `<p class="hint">Cada agente usa dois modelos. O da <b>oficina</b> faz o trabalho de verdade (tarefas com plano e verificação). O da <b>conversa</b> responde mensagens, faz a triagem, delega e fala nas reuniões. Ali o prompt é reenviado a cada passo, por isso o padrão é o modelo mais barato.</p>
+        <h4 class="sub">Oficina (tarefas)</h4>
+        ${group('model', 'model', `padrão da empresa: ${labelOf(data.companyModel)}`)}
+        <h4 class="sub" style="margin-top:18px">Conversa (mensagens, triagem e reuniões)</h4>
+        ${group('chatModel', 'chatModel', `${labelOf(data.chatDefaultModel)} (mais barato)`)}
         <label class="field" style="max-width:320px;margin-top:14px"><span>Profundidade de raciocínio</span><select data-effort ${dis}>
           ${[['', 'Padrão da empresa'], ['low', 'Baixa — mais rápido e barato'], ['medium', 'Média'], ['high', 'Alta — mais cuidadoso']].map(([v, l]) => `<option value="${v}" ${draft.effort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
       $$('input[name=model]', body).forEach((r) => r.addEventListener('change', () => { draft.model = r.value; markDirty(); }));
+      $$('input[name=chatModel]', body).forEach((r) => r.addEventListener('change', () => { draft.chatModel = r.value; markDirty(); }));
       $('[data-effort]', body)?.addEventListener('change', (e) => { draft.effort = e.target.value; markDirty(); });
     },
     test: () => {
@@ -262,6 +269,25 @@ export async function renderProfile(root, ctx) {
 
 export const hasUnsavedProfile = () => draftFor !== null && draft !== null;
 export const resetProfileDraft = () => { draftFor = null; draft = null; };
+
+/** Memória compartilhada da empresa. ctx = { canEdit } */
+export async function renderCompanyMemory(root, ctx) {
+  const m = await api('GET', '/api/company-memory');
+  const dis = ctx.canEdit ? '' : 'disabled';
+  const items = (m.text.match(/^### .+$/gm) || []).length;
+  root.innerHTML = `<div class="editor">
+    <p class="hint">Fatos que valem para mais de uma pessoa: decisões do dono, regras do negócio, preferências e resultados que um colega já levantou. Os agentes guardam aqui com <code>memoria_da_empresa_guardar</code>. Para economizar, só os <b>títulos</b> (<code>### título</code>) entram no contexto de todos, e o conteúdo é lido quando precisa. Cada item começa com <code>### título</code>.</p>
+    <textarea class="md" data-cmem ${dis} placeholder="# Memória da empresa&#10;&#10;## Fatos e decisões&#10;&#10;### Tom das redes sociais&#10;_Leandro, 17/11/2026_&#10;Sem depoimentos com nome de paciente ou profissional sem autorização por escrito.">${esc(m.text)}</textarea>
+    <div class="row md-foot"><span class="hint num">${items} ${items === 1 ? 'item' : 'itens'} · ${m.text.length.toLocaleString('pt-BR')} caracteres</span>${ctx.canEdit ? `<button type="button" class="btn small primary" data-cmemsave>${ic('check', 'sm')}Salvar</button>` : ''}</div>
+    ${m.history.length ? `<h4 class="sub">Versões anteriores</h4><ul class="people">${m.history.map((h) => `<li>${ic('clock', 'sm')}<span>${when(h.ts)} · ${esc(h.by || '—')} · ${h.size.toLocaleString('pt-BR')} caracteres</span>${ctx.canEdit ? `<button type="button" class="btn small" data-cmemrestore="${h.index}">Restaurar</button>` : ''}</li>`).join('')}</ul>` : ''}</div>`;
+  $('[data-cmemsave]', root)?.addEventListener('click', async () => {
+    try { await api('PUT', '/api/company-memory', { text: $('[data-cmem]', root).value }); toast('Memória da empresa salva'); renderCompanyMemory(root, ctx); } catch (e) { toast(e.message, 'err'); }
+  });
+  $$('[data-cmemrestore]', root).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Restaurar esta versão? A atual fica guardada.')) return;
+    await api('PUT', '/api/company-memory', { restore: +b.dataset.cmemrestore }); toast('Versão restaurada'); renderCompanyMemory(root, ctx);
+  }));
+}
 
 /** Base de conhecimento da empresa. ctx = { canEdit } */
 export async function renderKnowledge(root, ctx) {

@@ -17,10 +17,17 @@ export function profileOf(agent) {
     escalation: { to: p.escalation?.to || '', note: p.escalation?.note || '' },
     sendMode: { email: p.sendMode?.email || 'approval', chat: p.sendMode?.chat || 'approval', whatsapp: p.sendMode?.whatsapp || 'approval' },
     model: p.model || '',
+    chatModel: p.chatModel || '',
     effort: p.effort || '',
     workshop: workshopOf(p.workshop),
   };
 }
+
+// Dois modelos por agente: a CONVERSA (triagem, respostas curtas, reuniões) roda num modelo barato por padrão,
+// e a OFICINA (o trabalho de verdade, com plano e verificação) usa o modelo escolhido na ficha ou o padrão da empresa.
+export const CHAT_DEFAULT_MODEL = process.env.CHAT_DEFAULT_MODEL || 'claude-haiku-5-5';
+export const chatModelOf = (agent, store) => profileOf(agent).chatModel || store.company.settings.chatModel || CHAT_DEFAULT_MODEL;
+export const jobModelOf = (agent, store) => profileOf(agent).model || store.company.settings.model;
 
 // Oficina: como o agente trabalha numa tarefa (kits, verificação e limites). Vale para qualquer cargo.
 export const WORKSHOP_DEFAULT = {
@@ -82,6 +89,7 @@ export function sanitizeProfile(body, prev, { validPeople, validCollections }) {
   if (body.escalation) p.escalation = { to: validPeople.includes(body.escalation.to) ? body.escalation.to : '', note: s(body.escalation.note, 2000) };
   if (body.sendMode) p.sendMode = Object.fromEntries(Object.keys(CHANNELS).map((ch) => [ch, body.sendMode[ch] === 'auto' ? 'auto' : 'approval']));
   if (body.model !== undefined) p.model = MODELS.some((m) => m.id === body.model) ? body.model : '';
+  if (body.chatModel !== undefined) p.chatModel = MODELS.some((m) => m.id === body.chatModel) ? body.chatModel : '';
   if (body.effort !== undefined) p.effort = ['low', 'medium', 'high'].includes(body.effort) ? body.effort : '';
   if (body.workshop && typeof body.workshop === 'object') {
     const w = body.workshop; const c = w.code || {};

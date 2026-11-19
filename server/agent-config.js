@@ -1,15 +1,15 @@
 // Rotas da ficha do agente, da base de conhecimento, da fila de aprovação e do simulador.
 import { MODELS, providerFor, callClaude, describeError } from './llm.js';
-import { profileOf, placeholdersIn, sanitizeProfile, pushHistory, applyProfile, DYNAMIC_VARS, CHANNELS } from './profile.js';
+import { profileOf, placeholdersIn, sanitizeProfile, pushHistory, applyProfile, DYNAMIC_VARS, CHANNELS, chatModelOf, CHAT_DEFAULT_MODEL } from './profile.js';
 import * as kb from './knowledge.js';
 import { approve, customerChannels, can, allowedRepos } from './integrations.js';
 import { verifyHint } from './profile.js';
-import { readMemory, writeMemory, memoryHistory } from './memory.js';
+import { readMemory, writeMemory, memoryHistory, COMPANY_MEMORY_ID } from './memory.js';
 import { readActivity, activityStats } from './activity.js';
 import * as workbench from './workbench.js';
 
 // No simulador, só estas ferramentas rodam de verdade (apenas leitura). O resto é interceptado e só mostrado.
-const READ_ONLY = new Set(['read_file', 'list_files', 'repo_list_files', 'repo_read_file', 'railway_projects', 'railway_deployments', 'railway_logs', 'railway_variables', 'calendar_list', 'email_inbox_list', 'gmail_search', 'gmail_read', 'chat_conversations']);
+const READ_ONLY = new Set(['read_file', 'list_files', 'repo_list_files', 'repo_read_file', 'railway_projects', 'railway_deployments', 'railway_logs', 'railway_variables', 'calendar_list', 'email_inbox_list', 'gmail_search', 'gmail_read', 'chat_conversations', 'memoria_da_empresa_ler']);
 const ACTION_LABEL = {
   send_message: 'Mandaria mensagem', create_task: 'Criaria tarefa', update_task: 'Atualizaria tarefa', write_file: 'Escreveria arquivo',
   repo_open_pr: 'Abriria pull request', railway_redeploy: 'Faria redeploy', railway_restart: 'Reiniciaria serviço', railway_set_variable: 'Alteraria variável',
@@ -46,6 +46,7 @@ export function mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor }
       tools: rt(store).tools(a).map((t) => t.name),
       models: MODELS,
       companyModel: store.company.settings.model,
+      chatDefaultModel: store.company.settings.chatModel || CHAT_DEFAULT_MODEL,
       knowledge: { mode: mode.mode, tokens: mode.tokens, chunks: mode.chunks.length, inlineLimit: kb.INLINE_TOKEN_LIMIT },
       collections: kb.collections(store).map(kb.collectionSummary),
       people: people(store).map((p) => ({ id: p.id, name: p.name, role: p.role })),
@@ -121,6 +122,18 @@ export function mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor }
     res.json({ ok: true, text: readMemory(req.company, a.id) });
   });
 
+  // ---------------- memória da empresa (compartilhada) ----------------
+  app.get('/api/company-memory', requireCompany, (req, res) => {
+    res.json({ text: readMemory(req.company, COMPANY_MEMORY_ID), history: memoryHistory(req.company, COMPANY_MEMORY_ID).map((h, i) => ({ index: i, ts: h.ts, by: h.by, size: h.text.length })) });
+  });
+  app.put('/api/company-memory', requireCompany, need('admin'), (req, res) => {
+    let text = req.body?.text;
+    if (req.body?.restore !== undefined) text = memoryHistory(req.company, COMPANY_MEMORY_ID)[+req.body.restore]?.text;
+    if (typeof text !== 'string') return bad(res, 'Texto inválido');
+    if (writeMemory(req.company, COMPANY_MEMORY_ID, text, req.member.name)) runtimeFor(req.company).logEvent('system', req.member.id, `${req.member.name} editou a memória da empresa.`);
+    res.json({ ok: true, text: readMemory(req.company, COMPANY_MEMORY_ID) });
+  });
+
   // ---------------- ficha ----------------
   app.get('/api/agents/:id/profile', requireCompany, (req, res) => {
     const a = aiAgent(req);
@@ -188,8 +201,9 @@ export function mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor }
     let usage = { input: 0, output: 0 };
     try {
       for (let step = 0; step < 5; step++) {
-        const r = await callClaude(store, { system: rt.systemBlocks(a), messages, tools, model: profile.model, effort: profile.effort });
-        rt.trackUsage(r.usage, { model: profile.model, agentId: a.id, kind: 'sim' });
+        const model = chatModelOf(a, store);
+        const r = await callClaude(store, { system: rt.systemBlocks(a), messages, tools, model, effort: profile.effort });
+        rt.trackUsage(r.usage, { model, agentId: a.id, kind: 'sim' });
         usage = { input: usage.input + (r.usage?.input_tokens || 0) + (r.usage?.cache_read_input_tokens || 0) + (r.usage?.cache_creation_input_tokens || 0), output: usage.output + (r.usage?.output_tokens || 0) };
         if (r.stop_reason === 'refusal') { reply = reply || '(o modelo recusou responder)'; break; }
         messages.push({ role: 'assistant', content: r.content });
@@ -230,8 +244,9 @@ export function mountAgentConfig(app, { requireCompany, need, wrap, runtimeFor }
     let usage = { input: 0, output: 0 };
     try {
       for (let step = 0; step < 8; step++) {
-        const r = await callClaude(store, { system: runtime.systemBlocks(a), messages, tools, model: profile.model, effort: profile.effort });
-        runtime.trackUsage(r.usage, { model: profile.model, agentId: a.id, kind: 'sim' });
+        const model = chatModelOf(a, store);
+        const r = await callClaude(store, { system: runtime.systemBlocks(a), messages, tools, model, effort: profile.effort });
+        runtime.trackUsage(r.usage, { model, agentId: a.id, kind: 'sim' });
         usage = { input: usage.input + (r.usage?.input_tokens || 0) + (r.usage?.cache_read_input_tokens || 0) + (r.usage?.cache_creation_input_tokens || 0), output: usage.output + (r.usage?.output_tokens || 0) };
         if (r.stop_reason === 'refusal') { final = '(o modelo recusou responder)'; break; }
         messages.push({ role: 'assistant', content: r.content });

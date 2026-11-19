@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { uid } from './companies.js';
 import { providerFor, callClaude, describeError } from './llm.js';
-import { profileOf } from './profile.js';
+import { profileOf, chatModelOf } from './profile.js';
 import { readActivity } from './activity.js';
 import { recordWrite } from './files.js';
 import * as drive from './drive.js';
@@ -312,8 +312,11 @@ async function say(rt, agent, prompt, { maxText = 1800 } = {}) {
   const store = rt.store;
   if (providerFor(store) === 'mock') return `(modo simulado) ${agent.name}: sem novidades relevantes.`;
   const p = profileOf(agent);
-  const r = await callClaude(store, { system: rt.systemBlocks(agent), messages: [{ role: 'user', content: prompt }], tools: [], model: p.model, effort: p.effort });
-  rt.trackUsage(r.usage, { model: p.model, agentId: agent.id, kind: 'meeting' });
+  // Mesmo modelo, ferramentas e sistema da conversa: o início do prompt casa com o cache já gravado
+  // (sem ferramentas o prefixo mudava e cada fala regravava ~20 mil tokens). tool_choice none: só fala.
+  const model = chatModelOf(agent, store);
+  const r = await callClaude(store, { system: rt.systemBlocks(agent), messages: [{ role: 'user', content: prompt }], tools: rt.tools(agent), toolChoice: { type: 'none' }, model, effort: p.effort });
+  rt.trackUsage(r.usage, { model, agentId: agent.id, kind: 'meeting' });
   return r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim().slice(0, maxText) || '(sem fala)';
 }
 
