@@ -53,6 +53,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(ROOT, 'public/index.html'));
 });
 app.get('/site', page('landing.html'));
+app.get('/curso', page('curso.html'));
 app.get(['/privacidade', '/privacy'], page('privacidade.html'));
 app.get(['/termos', '/terms'], page('termos.html'));
 app.get('/invite/:token', (req, res) => {
