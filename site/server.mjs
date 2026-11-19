@@ -17,7 +17,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const NOTIFY_ON = !!(process.env.RESEND_API_KEY && process.env.LEADS_NOTIFY_TO && process.env.LEADS_FROM);
 
 // Rotas de páginas e pastas montadas (prefixo da URL → pasta no disco)
-const PAGES = { '/': 'landing.html', '/site': 'landing.html', '/privacidade': 'privacidade.html', '/privacy': 'privacidade.html', '/termos': 'termos.html', '/terms': 'termos.html' };
+const PAGES = { '/': 'landing.html', '/site': 'landing.html', '/curso': 'curso.html', '/privacidade': 'privacidade.html', '/privacy': 'privacidade.html', '/termos': 'termos.html', '/terms': 'termos.html' };
 const MOUNTS = [
   ['/vendor/three/', path.join(MODS, 'three')],
   ['/vendor/fonts/archivo/', path.join(MODS, '@fontsource/archivo/files')],
@@ -27,7 +27,7 @@ const MOUNTS = [
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.mp4': 'video/mp4', '.webm': 'video/webm', '.vtt': 'text/vtt; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8' };
 const GZIP = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg', '.txt', '.gltf', '.xml']);
 // Só o que o site precisa fica acessível; o resto do public/ (o app) não é servido aqui.
-const ALLOW = [/^\/(landing|privacidade|termos)\.html$/, /^\/site\.css$/, /^\/avatars\.js$/, /^\/brand\//, /^\/videos\//, /^\/assets\/kaykit\/(characters|animations)\//, /^\/assets\/kaykit\/LICENSE/, /^\/vendor\/three\/(build\/three\.module\.js|examples\/jsm\/)/, /^\/vendor\/fonts\//, /^\/robots\.txt$/, /^\/favicon\.ico$/];
+const ALLOW = [/^\/(landing|curso|privacidade|termos)\.html$/, /^\/site\.css$/, /^\/avatars\.js$/, /^\/brand\//, /^\/videos\//, /^\/assets\/kaykit\/(characters|animations)\//, /^\/assets\/kaykit\/LICENSE/, /^\/vendor\/three\/(build\/three\.module\.js|examples\/jsm\/)/, /^\/vendor\/fonts\//, /^\/robots\.txt$/, /^\/favicon\.ico$/];
 
 const SECURITY = {
   'X-Content-Type-Options': 'nosniff',
@@ -156,7 +156,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/admin/interessados.json') return exportLeads(req, res, 'json');
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Método não permitido.' });
     if (PAGES[p]) return serveFile(req, res, path.join(PUB, PAGES[p]), { html: true });
-    if (/^\/(landing|privacidade|termos)\.html$/.test(p)) { res.writeHead(301, { Location: p === '/landing.html' ? '/' : p.replace('.html', ''), ...SECURITY }); return res.end(); }
+    if (/^\/(landing|curso|privacidade|termos)\.html$/.test(p)) { res.writeHead(301, { Location: p === '/landing.html' ? '/' : p.replace('.html', ''), ...SECURITY }); return res.end(); }
     if (p === '/robots.txt') { res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY }); return res.end('User-agent: *\nDisallow: /admin/\nDisallow: /api/\n'); }
     if (p === '/favicon.ico') return serveFile(req, res, path.join(PUB, 'brand/iaorg-mark.svg'));
     if (!ALLOW.some((re) => re.test(p))) return send404(res);

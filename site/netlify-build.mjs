@@ -27,6 +27,12 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').repl
 const meta = (html, re) => (html.match(re) || [])[1] || '';
 const ldJson = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
+const courseProduct = (desc) => ({
+  '@type': 'Product', name: 'IAORG na Prática: Curso Completo de Agentes de IA para o seu Negócio', image: `${SITE}/brand/curso-iaorg-na-pratica.jpg`, url: `${SITE}/curso`,
+  description: desc || 'E-book didático e ilustrado para montar e comandar uma equipe de agentes de IA no IAORG, com 5 casos completos, fichas prontas e plano de 30 dias.',
+  brand: { '@type': 'Brand', name: 'IAORG' }, inLanguage: 'pt-BR',
+  offers: { '@type': 'Offer', price: '97.99', priceCurrency: 'BRL', availability: 'https://schema.org/InStock', url: COURSE_URL },
+});
 const org = { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'IAORG', url: `${SITE}/`, logo: `${SITE}/brand/iaorg-512.png`, sameAs: [REPO] };
 const site = { '@type': 'WebSite', '@id': `${SITE}/#site`, name: 'IAORG', url: `${SITE}/`, inLanguage: 'pt-BR', publisher: { '@id': `${SITE}/#org` } };
 
@@ -44,12 +50,10 @@ const pages = {
       applicationCategory: 'BusinessApplication', operatingSystem: 'Linux, macOS, Windows (Docker)', inLanguage: 'pt-BR',
       license: `${REPO}/blob/main/LICENSE`, offers: { '@type': 'Offer', price: '0', priceCurrency: 'BRL' }, publisher: { '@id': `${SITE}/#org` } },
     { '@type': 'SoftwareSourceCode', name: 'IAORG', codeRepository: REPO, programmingLanguage: 'JavaScript', license: `${REPO}/blob/main/LICENSE` },
-    // curso vendido na loja (seção #curso da landing)
-    { '@type': 'Product', name: 'IAORG na Prática: Curso Completo de Agentes de IA para o seu Negócio', image: `${SITE}/brand/curso-iaorg-na-pratica.jpg`,
-      description: 'E-book didático e ilustrado para montar e comandar uma equipe de agentes de IA no IAORG, com 5 casos completos, fichas prontas e plano de 30 dias.',
-      brand: { '@id': `${SITE}/#org` }, inLanguage: 'pt-BR',
-      offers: { '@type': 'Offer', price: '97.99', priceCurrency: 'BRL', availability: 'https://schema.org/InStock', url: COURSE_URL } },
+    // curso vendido na loja (seção #curso da landing e página /curso)
+    courseProduct(),
     ...videos] },
+  'curso.html': { src: 'curso.html', url: `${SITE}/curso`, ogType: 'website', priority: '0.9', graph: (title, desc) => [org, site, courseProduct(desc)] },
   'privacidade.html': { src: 'privacidade.html', url: `${SITE}/privacidade`, ogType: 'article', priority: '0.3' },
   'termos.html': { src: 'termos.html', url: `${SITE}/termos`, ogType: 'article', priority: '0.3' },
 };
