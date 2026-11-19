@@ -78,6 +78,8 @@ services:
         condition: service_healthy
 
   # Cria e controla os containers de tarefa dos agentes. É o ÚNICO serviço com acesso ao Docker.
+  # No WSL com Docker Desktop, suba com ./scripts/up.sh: ele recria o runner pelo docker do Windows,
+  # senão o mount do docker.sock aponta para a distro e o runner não sobe ao ligar o PC (ver README).
   runner:
     build: ./runner
     image: iaorg-runner:latest
