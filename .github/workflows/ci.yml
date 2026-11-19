@@ -18,7 +18,7 @@ jobs:
       RUNNER_URL: http://runner:8787
       RUNNER_TOKEN: ci-somente-teste
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Imagem do app
         run: docker build -t iaorg-ci .
       - name: Imagem do site (landing)
