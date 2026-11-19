@@ -308,5 +308,19 @@
       });
     })();
   </script>
+  <script>
+    // Conversão "Compra - Curso IAORG" no clique em Comprar (a compra em si acontece na loja).
+    // Uma por visita: o mesmo transaction_id em cliques repetidos faz o Google contar só uma vez.
+    (() => {
+      let tid = '';
+      try { tid = sessionStorage.getItem('iaorg_conv_tid') || ''; } catch { /* sem storage */ }
+      if (!tid) { tid = `clique-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; try { sessionStorage.setItem('iaorg_conv_tid', tid); } catch { /* sem storage */ } }
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-buy]');
+        if (!a || typeof gtag !== 'function') return;
+        gtag('event', 'conversion', { send_to: 'AW-17942627602/CJP_CMvo47sdEJKK2-tC', value: 97.99, currency: 'BRL', transaction_id: tid });
+      });
+    })();
+  </script>
 </body>
 </html>
