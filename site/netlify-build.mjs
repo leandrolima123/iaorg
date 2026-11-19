@@ -20,6 +20,7 @@ const copy = (from, to) => {
 // de public/), porque o mesmo HTML também é servido por instalações próprias em outros endereços.
 const SITE = (process.env.SITE_URL || 'https://iaorg.app').replace(/\/+$/, '');
 const REPO = 'https://github.com/leandrolima123/iaorg';
+const COURSE_URL = 'https://ltech.vendabien.com/produto/1a3ac412-6615-4fd8-8aff-149d474b26bf';
 const OG_IMAGE = `${SITE}/brand/og-iaorg.png`;
 const PUBLISHED = '2026-11-16';
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -43,6 +44,11 @@ const pages = {
       applicationCategory: 'BusinessApplication', operatingSystem: 'Linux, macOS, Windows (Docker)', inLanguage: 'pt-BR',
       license: `${REPO}/blob/main/LICENSE`, offers: { '@type': 'Offer', price: '0', priceCurrency: 'BRL' }, publisher: { '@id': `${SITE}/#org` } },
     { '@type': 'SoftwareSourceCode', name: 'IAORG', codeRepository: REPO, programmingLanguage: 'JavaScript', license: `${REPO}/blob/main/LICENSE` },
+    // curso vendido na loja (seção #curso da landing)
+    { '@type': 'Product', name: 'IAORG na Prática: Curso Completo de Agentes de IA para o seu Negócio', image: `${SITE}/brand/curso-iaorg-na-pratica.jpg`,
+      description: 'E-book didático e ilustrado para montar e comandar uma equipe de agentes de IA no IAORG, com 5 casos completos, fichas prontas e plano de 30 dias.',
+      brand: { '@id': `${SITE}/#org` }, inLanguage: 'pt-BR',
+      offers: { '@type': 'Offer', price: '97.99', priceCurrency: 'BRL', availability: 'https://schema.org/InStock', url: COURSE_URL } },
     ...videos] },
   'privacidade.html': { src: 'privacidade.html', url: `${SITE}/privacidade`, ogType: 'article', priority: '0.3' },
   'termos.html': { src: 'termos.html', url: `${SITE}/termos`, ogType: 'article', priority: '0.3' },
