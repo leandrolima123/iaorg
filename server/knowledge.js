@@ -4,7 +4,9 @@
 // perguntas típicas e texto) e recebe os trechos mais relevantes.
 import { uid } from './companies.js';
 
-export const INLINE_TOKEN_LIMIT = +process.env.KB_INLINE_TOKENS || 60000;
+// Até este tamanho a base vai inteira no prompt da conversa (com cache); acima, o agente busca com buscar_conhecimento.
+// Ela é reenviada em todos os passos de cada ciclo, então o padrão é baixo. Na oficina a base vai sempre como arquivos.
+export const INLINE_TOKEN_LIMIT = +process.env.KB_INLINE_TOKENS || 6000;
 export const estimateTokens = (text) => Math.ceil(String(text || '').length / 3.6);
 
 const ensure = (store) => (store.state.knowledge ||= { collections: [] });

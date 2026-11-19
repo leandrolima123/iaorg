@@ -8,8 +8,8 @@ import { tickFunctions, FUNCTION_CATALOG } from './functions.js';
 import { toolsFor, executeIntegrationTool, accessSummary, accessNames, publicState, migrate, escalateNote, customerChannels, can } from './integrations.js';
 import { ROLE_CATALOG } from './templates.js';
 import { brandPromptBlock } from './brand.js';
-import { profileOf, fillVariables, CHANNELS, verifyHint } from './profile.js';
-import { memoryBlock, readMemory, writeMemory } from './memory.js';
+import { profileOf, fillVariables, CHANNELS, verifyHint, chatModelOf } from './profile.js';
+import { memoryBlock, readMemory, writeMemory, companyMemoryIndex, companyMemorySections, upsertSection, COMPANY_MEMORY_ID } from './memory.js';
 import { recordWrite } from './files.js';
 import * as drive from './drive.js';
 
@@ -62,6 +62,37 @@ export function runtimeFor(store) {
 }
 
 // ---------------- ferramentas ----------------
+// Memória compartilhada da empresa (todos os agentes, na conversa e na oficina).
+const COMPANY_MEMORY_TOOLS = [
+  {
+    name: 'memoria_da_empresa_ler',
+    description: 'Lê a memória compartilhada da empresa (decisões, preferências do dono, como a empresa faz as coisas, resultados que colegas já levantaram). Os títulos estão no seu contexto; leia antes de pesquisar, perguntar ou refazer algo.',
+    input_schema: { type: 'object', properties: { assunto: { type: 'string', description: 'Palavras do assunto (vazio = tudo, até o limite)' } } },
+  },
+  {
+    name: 'memoria_da_empresa_guardar',
+    description: 'Guarda na memória da empresa algo que vale para MAIS de uma pessoa da equipe: uma decisão do dono, uma preferência, uma regra do negócio, um resultado que outros vão precisar (ex.: "variáveis do Google Ads conferidas em 17/11"). Escreva completo e autossuficiente. O que só serve ao seu cargo vai em guardar_na_memoria. Nada de dados pessoais de clientes nem segredos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        assunto: { type: 'string', description: 'Título curto e buscável; o mesmo título substitui a versão anterior' },
+        conteudo: { type: 'string', description: 'O fato, a decisão ou o resultado, com data e fonte' },
+        fonte: { type: 'string', description: 'Quem decidiu ou de onde veio, ex.: "Leandro, 17/11/2026"' },
+      },
+      required: ['assunto', 'conteudo'],
+    },
+  },
+];
+// Ferramentas "leves" da conversa rápida: falar, delegar, registrar, ler e responder clientes.
+// As demais (gerar imagem, publicar, relatórios, código, infra…) são trabalho de oficina: na conversa,
+// cada ciclo pode usar no máximo CHAT_HEAVY_LIMIT delas; acima disso o agente cria uma tarefa para si.
+const LIGHT_TOOLS = new Set(['send_message', 'create_task', 'update_task', 'aprovar_tarefa', 'guardar_na_memoria', 'memoria_da_empresa_ler', 'memoria_da_empresa_guardar', 'escalar_para_humano', 'buscar_conhecimento', 'read_file', 'list_files']);
+export const isLightTool = (name) => LIGHT_TOOLS.has(name) || /^(email|gmail|chat|whatsapp)_/.test(name);
+const CHAT_HEAVY_LIMIT = +process.env.CHAT_HEAVY_LIMIT || 3;
+// Resultado de ferramenta muito longo é reenviado a cada passo do ciclo: corta e avisa.
+const TOOL_RESULT_MAX = +process.env.TOOL_RESULT_MAX_CHARS || 8000;
+export const clipToolResult = (s, max = TOOL_RESULT_MAX) => (s.length <= max ? s : `${s.slice(0, max)}… [resultado cortado: ${s.length.toLocaleString('pt-BR')} caracteres no total. Se precisar do resto, refine a consulta (filtros, limite menor).]`);
+
 const BASE_TOOLS = [
   {
     name: 'send_message',
@@ -310,26 +341,24 @@ export class CompanyRuntime {
         required: ['assunto', 'conteudo'],
       },
     });
+    extra.push(...COMPANY_MEMORY_TOOLS);
     return [...BASE_TOOLS, ...extra, ...toolsFor(this.store, agent)];
   }
 
   // Acrescenta um aprendizado na memória do agente (seção "Aprendido com a equipe"); substitui se o assunto já existir.
-  rememberLesson(agent, { assunto, conteudo, fonte }) {
+  rememberLesson(agent, { assunto, conteudo, fonte }, { shared = false } = {}) {
     const title = String(assunto || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const body = String(conteudo || '').trim().slice(0, 4000);
     if (!title || !body) return { error: 'Informe assunto e conteudo.' };
     const date = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    const block = `### ${title}\n_${fonte ? String(fonte).slice(0, 120) : `aprendido em ${date}`}_\n${body}`;
-    let mem = readMemory(this.store, agent.id).trim() || '# Memória';
-    const H = '## Aprendido com a equipe';
-    if (!mem.includes(H)) mem = `${mem}\n\n${H}`;
-    const esc = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`### ${esc}\\n[\\s\\S]*?(?=\\n### |\\n## |$)`);
-    mem = re.test(mem) ? mem.replace(re, block) : mem.replace(H, `${H}\n\n${block}`);
-    if (mem.length > 38000) return { error: 'Memória cheia: resuma ou remova itens antigos na aba Memória da ficha.' };
-    writeMemory(this.store, agent.id, mem, agent.name);
-    this.logEvent('system', agent.id, `${agent.name} guardou na memória: "${title}"`);
-    return { ok: true, aviso: 'Guardado. Vai estar no seu contexto nas próximas conversas e tarefas.' };
+    const block = `### ${title}\n_${fonte ? String(fonte).slice(0, 120) : `${shared ? `por ${agent.name}, ` : 'aprendido '}em ${date}`}_\n${body}`;
+    const id = shared ? COMPANY_MEMORY_ID : agent.id;
+    const base = readMemory(this.store, id).trim() || (shared ? '# Memória da empresa' : '# Memória');
+    const mem = upsertSection(base, shared ? '## Fatos e decisões' : '## Aprendido com a equipe', title, block);
+    if (mem.length > 38000) return { error: shared ? 'Memória da empresa cheia: peça a um administrador para resumir (Equipe → Memória da empresa).' : 'Memória cheia: resuma ou remova itens antigos na aba Memória da ficha.' };
+    writeMemory(this.store, id, mem, agent.name);
+    this.logEvent('system', agent.id, `${agent.name} guardou na memória${shared ? ' da empresa' : ''}: "${title}"`);
+    return { ok: true, aviso: shared ? 'Guardado na memória da empresa: todos os colegas passam a ver o título e podem ler o conteúdo.' : 'Guardado. Vai estar no seu contexto nas próximas conversas e tarefas.' };
   }
 
   // Cria a tarefa de escalonamento para a pessoa definida na ficha (ou o dono).
@@ -405,6 +434,12 @@ export class CompanyRuntime {
         return { ok: true };
       }
       case 'guardar_na_memoria': return this.rememberLesson(agent, input);
+      case 'memoria_da_empresa_guardar': return this.rememberLesson(agent, input, { shared: true });
+      case 'memoria_da_empresa_ler': {
+        const r = companyMemorySections(store, input.assunto);
+        if (!r.total) return { itens: 0, texto: '', aviso: 'A memória da empresa ainda está vazia.' };
+        return { itens_total: r.total, encontrados: r.found, texto: r.text || '(nada encontrado com essas palavras: tente outras ou deixe o assunto vazio)' };
+      }
       case 'write_file': {
         const full = store.safePath(input.path);
         fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -499,7 +534,7 @@ export class CompanyRuntime {
   // exemplos; [muda às vezes] memória e organograma. Assim aprender algo novo só regrava o segundo bloco.
   systemBlocks(agent) {
     const { stable, dynamic } = this.systemPrompt(agent, { split: true });
-    const mark = cacheMark();
+    const mark = cacheMark(this.longCache(agent));
     return [
       { type: 'text', text: stable, cache_control: mark },
       ...(dynamic ? [{ type: 'text', text: dynamic, cache_control: mark }] : []),
@@ -553,6 +588,8 @@ ${fill(profile.instructions) || '(sem instruções específicas)'}
     if (profile.procedures.trim()) parts.push(`<procedimentos>\n${fill(profile.procedures)}\n</procedimentos>`);
     const mem = memoryBlock(this.store, agent.id);
     if (mem) dyn.push(mem);
+    const shared = companyMemoryIndex(this.store);
+    if (shared) dyn.push(shared);
     if (kbFiles) parts.push(`Você tem uma base de conhecimento com ${kb.chunks.length} trechos sobre a empresa e o produto, em arquivos na pasta /work/conhecimento (comece por /work/conhecimento/INDICE.md). Ela NÃO está neste prompt: busque com Grep e leia só os arquivos que importam para a tarefa antes de afirmar algo. Se a informação não estiver nela, não invente.`);
     else if (kb.mode === 'inline') parts.push('A base de conhecimento acima é a fonte de verdade sobre a empresa e o produto: use-a. Se a informação não estiver nela, não invente: diga que vai verificar e, se precisar, escale para uma pessoa.');
     else if (kb.mode === 'search') parts.push(`Você tem uma base de conhecimento com ${kb.chunks.length} trechos sobre a empresa e o produto. Consulte-a com buscar_conhecimento (pode filtrar por categoria) antes de afirmar algo. Se a informação não estiver nela, não invente.`);
@@ -592,7 +629,9 @@ ${org}
 - Não mande mensagens só para agradecer ou confirmar. Evite conversas em loop. Se estiver bloqueado, use update_task -> "blocked" explicando o motivo.
 - PEDIR A UM COLEGA: escolha quem faz pelo organograma (linhas "faz" e "acessos"); não peça a quem não tem a responsabilidade ou o acesso. Use create_task com descrição clara, critério de pronto e o campo motivo. Se o colega não for da sua equipe, o pedido vai primeiro para quem você reporta aprovar: avise quem te pediu que está aguardando aprovação e siga com o que não depende disso. Quando o pedido estiver aguardando a SUA aprovação, decida com aprovar_tarefa (aprovar, recusar com motivo ou passar para outra pessoa), pensando nas prioridades da sua área.
 - CONTEXTO: você recebe a conversa recente com quem está falando, o seu diário recente e as suas tarefas entregues. Perguntas curtas ("e quando foi isso?", "pode verificar?") se referem ao assunto da conversa: retome de onde parou, sem pedir para repetir. Se precisar confirmar um fato (data de commit, PR, número), use as ferramentas (ex.: repo_history) em vez de supor.
-- APRENDA COM A EQUIPE: quando uma pessoa te ensinar algo (resposta a um caso que você escalou, "como fazer", correção, preferência), use guardar_na_memoria NA MESMA HORA, com a orientação completa e os passos, antes de responder ao cliente. Assim você não precisa perguntar de novo. Se a orientação contradiz algo da sua memória, guarde a versão nova com o mesmo assunto (ela substitui a antiga).
+- APRENDA COM A EQUIPE: quando uma pessoa te ensinar algo (resposta a um caso que você escalou, "como fazer", correção, preferência), use guardar_na_memoria NA MESMA HORA, com a orientação completa e os passos, antes de responder ao cliente. Assim você não precisa perguntar de novo. Se a orientação contradiz algo da sua memória, guarde a versão nova com o mesmo assunto (ela substitui a antiga). Se o que aprendeu vale para outros colegas (decisão do dono, regra do negócio, resultado que outros vão usar), guarde com memoria_da_empresa_guardar.
+- MEMÓRIA DA EMPRESA: os títulos estão no seu contexto. Antes de pesquisar, perguntar a alguém ou refazer um levantamento, leia o item com memoria_da_empresa_ler.${this.usesWorkshop() ? `
+- CONVERSA x OFICINA: esta conversa é para responder, combinar e delegar. Trabalho com várias etapas (pesquisar, gerar imagens, montar e publicar posts, relatórios, análises, código) vai para a sua OFICINA: crie uma tarefa para você mesmo com create_task (seu próprio id), com critério de pronto, e avise quem pediu. Aqui você pode usar no máximo ${CHAT_HEAVY_LIMIT} ferramentas de trabalho por ciclo (consultas rápidas); falar, delegar, registrar e responder clientes não contam.` : ''}
 - Escreva em português do Brasil.`;
     const examples = profile.examples.trim() ? `\n\nExemplos de como responder (siga o tom e o formato):\n<examples>\n${fill(profile.examples)}\n</examples>` : '';
     const stable = `${parts.join('\n\n')}\n\nComo trabalhar (o organograma e a sua memória vêm logo abaixo):\n${tail}${examples}`;
@@ -603,8 +642,10 @@ ${org}
   buildContext(agent) {
     const newMessages = this.s.messages.filter((m) => m.to === agent.id && !m.read);
     const myTasks = this.s.tasks.filter((t) => t.assigneeId === agent.id && t.status !== 'done');
-    const delegated = this.s.tasks.filter((t) => t.creatorId === agent.id && t.assigneeId !== agent.id).slice(-15);
-    const files = this.store.listFiles().slice(0, 80);
+    // Contexto enxuto: ele é reenviado em todos os passos do ciclo. Só o recente; o resto o agente busca (list_files, ferramentas).
+    const delegated = this.s.tasks.filter((t) => t.creatorId === agent.id && t.assigneeId !== agent.id && (t.status !== 'done' || (t.updatedAt || 0) >= Date.now() - 7 * 864e5)).slice(-8);
+    const allFiles = this.store.listFiles();
+    const files = [...allFiles].sort((a, b) => (b.mtime || 0) - (a.mtime || 0)).slice(0, 25);
     const who = (id) => `${id} (${this.nameOf(id)}${this.isHuman(id) ? ', humano' : ''})`;
 
     const when = (ts) => new Date(ts).toLocaleString('pt-BR', { timeZone: process.env.COMPANY_TZ || 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -625,19 +666,19 @@ ${org}
     // O que você mesmo fez nos últimos dias (ferramentas, buscas, resultados): para lembrar como chegou a uma resposta.
     const recent = readActivity(this.store, agent.id, { limit: 40 })
       .filter((e) => e.ts >= Date.now() - 3 * 864e5 && ['tool', 'text', 'task', 'job', 'file'].includes(e.type) && e.name !== 'send_message')
-      .slice(0, 18).reverse();
+      .slice(0, 10).reverse();
     if (recent.length) {
       lines.push('\n## Seu diário recente (o que você fez e encontrou, mais antigo primeiro)');
-      for (const e of recent) lines.push(`- [${when(e.ts)}] ${e.type === 'tool' ? `ferramenta ${e.name}${e.ok === false ? ' (erro)' : ''}: ` : e.type === 'job' ? `oficina${e.task ? ` ${e.task}` : ''}: ` : e.type === 'text' ? 'você concluiu: ' : ''}${cut(e.text, 300)}`);
+      for (const e of recent) lines.push(`- [${when(e.ts)}] ${e.type === 'tool' ? `ferramenta ${e.name}${e.ok === false ? ' (erro)' : ''}: ` : e.type === 'job' ? `oficina${e.task ? ` ${e.task}` : ''}: ` : e.type === 'text' ? 'você concluiu: ' : ''}${cut(e.text, 200)}`);
     }
     // Tarefas que você concluiu (com resultado e PR): para responder "quando foi feito", "o que mudou".
-    const doneRecently = this.s.tasks.filter((t) => t.assigneeId === agent.id && ['done', 'review'].includes(t.status) && (t.updatedAt || 0) >= Date.now() - 21 * 864e5).slice(-6);
+    const doneRecently = this.s.tasks.filter((t) => t.assigneeId === agent.id && ['done', 'review'].includes(t.status) && (t.updatedAt || 0) >= Date.now() - 14 * 864e5).slice(-4);
     if (doneRecently.length) {
       lines.push('\n## Suas tarefas entregues recentemente');
       for (const t of doneRecently) {
         const j = (this.s.jobs || []).filter((x) => x.taskId === t.id).at(-1);
         const pr = j?.pr ? ` · PR #${j.pr.number} (${j.pr.state === 'merged' ? 'mergeado' : j.pr.state}) ${j.pr.url}${j.code?.branch ? ` · branch ${j.code.branch}` : ''}` : '';
-        lines.push(`- [${t.id}] ${t.status === 'done' ? 'concluída' : 'em revisão'} em ${when(t.updatedAt)}: ${t.title}${pr}\n  resultado: ${cut(t.result, 500)}`);
+        lines.push(`- [${t.id}] ${t.status === 'done' ? 'concluída' : 'em revisão'} em ${when(t.updatedAt)}: ${t.title}${pr}\n  resultado: ${cut(t.result, 300)}`);
       }
     }
     lines.push('\n## Suas tarefas abertas');
@@ -648,7 +689,7 @@ ${org}
       lines.push('\n## Tarefas que você delegou');
       for (const t of delegated) lines.push(`- [${t.id}] (${t.status}) ${t.title} → ${who(t.assigneeId)}${t.result ? ` | resultado: ${t.result.slice(0, 200)}` : ''}`);
     }
-    lines.push('\n## Arquivos no workspace');
+    lines.push(`\n## Arquivos mais recentes do workspace${allFiles.length > files.length ? ` (${files.length} de ${allFiles.length}; use list_files para ver todos)` : ''}`);
     lines.push(files.length ? files.map((f) => `- ${f.path}`).join('\n') : '(vazio)');
     lines.push('\nDecida e aja agora usando as ferramentas. Quando terminar este ciclo, responda com uma frase curta de resumo.');
 
@@ -744,6 +785,13 @@ ${org}
     this.emit({ type: 'usage', usage: this.usagePayload() });
   }
 
+  // Cache de 1 h (gravação a 2×) só compensa para quem é chamado várias vezes por hora: agentes que atendem
+  // clientes (e-mail, chat, WhatsApp). Os demais conversam em rajadas espaçadas: cache de 5 min (gravação a 1,25×),
+  // que cobre todos os passos de um ciclo e as respostas logo em seguida.
+  longCache(agent) {
+    return CACHE_TTL === '1h' && customerChannels(this.store, agent).length > 0;
+  }
+
   // ---------- mantenedor do cache ----------
   // Cada chamada renova o cache do prompt fixo do agente (TTL de 1 h). chat=true marca uso real.
   cacheTouched(agentId, chat = false) {
@@ -773,17 +821,18 @@ ${org}
       // só renova cache ainda vivo (52–59 min): regravar um cache vencido custa ~40 leituras, então isso fica
       // para a próxima conversa real. Na prática: a 1ª conversa do dia grava e o mantenedor segura até o fim do expediente.
       const age = now - (k?.hotAt || 0);
-      return a.active !== false && k?.chatAt && now - k.chatAt < 3 * 864e5 && age > 52 * 60_000 && age < 59 * 60_000 && !this.agentRuntime(a.id).busy;
+      return a.active !== false && this.longCache(a) && k?.chatAt && now - k.chatAt < 3 * 864e5 && age > 52 * 60_000 && age < 59 * 60_000 && !this.agentRuntime(a.id).busy;
     });
     if (!due.length) return;
     this.warming = true;
     try {
       for (const agent of due) {
         const p = profileOf(agent);
+        const model = chatModelOf(agent, this.store);
         try {
-          const res = await warmCache(this.store, { system: this.systemBlocks(agent), tools: this.tools(agent), model: p.model, effort: p.effort });
+          const res = await warmCache(this.store, { system: this.systemBlocks(agent), tools: this.tools(agent), model, effort: p.effort });
           if (!res) continue;
-          this.trackUsage(res.usage, { model: p.model, agentId: agent.id, kind: 'cache' });
+          this.trackUsage(res.usage, { model, agentId: agent.id, kind: 'cache' });
           this.cacheTouched(agent.id);
         } catch (e) {
           console.warn('[cache] mantenedor', agent.id, describeError(e));
@@ -822,7 +871,9 @@ ${org}
     const system = this.systemBlocks(agent);
     const tools = this.tools(agent);
     const messages = [{ role: 'user', content: ctx.text }];
-    const agentModel = profileOf(agent).model;
+    const agentModel = chatModelOf(agent, this.store);
+    let heavy = 0; // ferramentas de trabalho usadas neste ciclo (limite: CHAT_HEAVY_LIMIT, se houver oficina)
+    const capHeavy = this.usesWorkshop();
     // Arquivos produzidos nesta conversa e a última fala do agente: viram "entrega" na mesa de quem pediu.
     const written = new Set();
     let finalText = '';
@@ -846,7 +897,7 @@ ${org}
             },
             iteration: step,
           })
-          : await callClaude(this.store, { system, messages, tools, model: profileOf(agent).model, effort: profileOf(agent).effort });
+          : await callClaude(this.store, { system, messages, tools, model: agentModel, effort: profileOf(agent).effort });
 
         if (provider !== 'mock') { this.trackUsage(res.usage, { model: agentModel, agentId: agent.id, kind: 'chat' }); this.cacheTouched(agent.id, true); r.retries = 0; }
         if (res.stop_reason === 'refusal') {
@@ -868,14 +919,20 @@ ${org}
 
         const results = [];
         for (const tool of toolUses) {
-          acted = true;
           let out;
+          if (capHeavy && !isLightTool(tool.name) && ++heavy > CHAT_HEAVY_LIMIT) {
+            // Trabalho de várias etapas na conversa reenvia o prompt inteiro a cada passo: manda para a oficina.
+            out = { error: `Limite da conversa: ${CHAT_HEAVY_LIMIT} ferramentas de trabalho por ciclo. Isto é trabalho de oficina: crie uma tarefa para você mesmo (create_task com o seu id "${agent.id}", descrevendo o pedido e o critério de pronto, e cite o que já levantou), avise quem pediu com send_message e encerre este ciclo.` };
+            results.push({ type: 'tool_result', tool_use_id: tool.id, content: JSON.stringify(out), is_error: true });
+            continue;
+          }
+          acted = true;
           try { out = await this.executeTool(agent, tool.name, tool.input || {}, ctx.taskHint); } catch (e) { out = { error: e.message }; }
           if (tool.name === 'write_file' && !out?.error && tool.input?.path) written.add(String(tool.input.path).replace(/^[/\\]+/, ''));
           if (!['send_message'].includes(tool.name)) {
             logActivity(this.store, agent.id, { type: 'tool', name: tool.name, ok: !out?.error, text: summarizeInput(tool.input), detail: out?.error || out });
           }
-          results.push({ type: 'tool_result', tool_use_id: tool.id, content: JSON.stringify(out), is_error: !!out?.error });
+          results.push({ type: 'tool_result', tool_use_id: tool.id, content: clipToolResult(JSON.stringify(out) ?? '{}'), is_error: !!out?.error });
           await new Promise((rs) => setTimeout(rs, provider === 'mock' ? 900 : 300));
         }
         messages.push({ role: 'user', content: results });

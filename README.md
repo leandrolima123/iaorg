@@ -522,14 +522,20 @@ Cada agente de IA tem uma ficha (Equipe → agente → **Ficha do agente**):
 | Instruções | persona, tom, formato e regras fixas |
 | Procedimentos | playbooks por situação |
 | Exemplos | 3 a 5 conversas-modelo (entram em `<examples>`) |
-| Conhecimento | coleções da base. Até cerca de 60 mil tokens vão inteiras no prompt, com cache. Acima disso, o agente ganha `buscar_conhecimento` (BM25) |
+| Conhecimento | coleções da base. Até cerca de 6 mil tokens (`KB_INLINE_TOKENS`) vão inteiras no prompt da conversa, com cache. Acima disso, o agente ganha `buscar_conhecimento` (BM25). Na oficina, a base vai sempre como arquivos lidos sob demanda |
 | Variáveis | `{{nome}}` fixas. São automáticas: `{{empresa}}`, `{{site}}`, `{{nome_agente}}`. Vêm de cada mensagem: `{{canal}}`, `{{caixa_destino}}`, `{{nome_cliente}}`, `{{email_cliente}}` |
 | Escalonamento e envio | quem recebe os casos escalados (`escalar_para_humano`) e o modo de envio por canal |
-| Modelo | modelo e profundidade só deste agente |
+| Modelo | dois modelos por agente: o da **oficina** (tarefas; padrão da empresa) e o da **conversa** (mensagens, triagem e reuniões; padrão Haiku, o mais barato), mais a profundidade |
 | Oficina | kits, regra de verificação, limites e o kit Código (repositórios, setup, testes, lint e merge) |
 | Memória | o que o agente aprendeu entre tarefas, editável |
 | Testar | simulador com o prompt real; nada é enviado |
 | Histórico | as últimas 15 versões, com restauração |
+
+**Memória da empresa** (Equipe → Memória da empresa): o que vale para toda a equipe. Exemplos: decisões do dono, regras do negócio, preferências e resultados que um colega já levantou.
+- Os agentes guardam com `memoria_da_empresa_guardar` e leem com `memoria_da_empresa_ler`.
+- Só os títulos entram no contexto de todos; o conteúdo é lido sob demanda.
+- Administradores editam e restauram versões.
+- A memória de cada agente fica com o que é do cargo dele.
 
 **Base de conhecimento** (Equipe → Base de conhecimento). Formatos aceitos:
 - `.md`: cada `##` vira um trecho; com frontmatter, o arquivo inteiro é um trecho;
@@ -587,10 +593,15 @@ O agente escreve só o corpo. No envio, o IAORG monta o HTML com versão em text
 ### Custos, cache e Painel
 
 - **Preço:** cada chamada é calculada com o preço do modelo. A leitura de cache sai de 2,5% a 10% do preço de entrada, conforme o modelo.
+- **Conversa barata, oficina capaz:** a conversa (mensagens, triagem, reuniões e simulador) usa o modelo da conversa da ficha (padrão `claude-haiku-5-5`, ajustável em `CHAT_DEFAULT_MODEL` ou `settings.chatModel`). O trabalho de verdade roda na oficina, com o modelo escolhido.
+- **Trabalho pesado vai para a oficina:** com a oficina ligada, cada ciclo de conversa pode usar no máximo 3 ferramentas de trabalho (`CHAT_HEAVY_LIMIT`), como gerar imagem, publicar, relatórios ou código. Acima disso, o agente cria uma tarefa para si. Falar, delegar, registrar e responder clientes não contam.
+- **Contexto enxuto:** a conversa leva só os 25 arquivos mais recentes, o diário curto e as entregas recentes. Resultados de ferramenta acima de 8 mil caracteres (`TOOL_RESULT_MAX_CHARS`) são cortados com aviso.
 - **Cache do prompt** em duas partes:
-  - a fixa (base, instruções e exemplos), com cache de 1 h;
-  - a que muda às vezes (memória e organograma).
-- **Mantenedor do cache:** no expediente (seg–sex, 8h–18h, ajustável em `settings.cacheHours`), renova o cache dos agentes ativos com `max_tokens: 0`.
+  - a fixa (base, instruções e exemplos);
+  - a que muda às vezes (memória, títulos da memória da empresa e organograma).
+- **Validade do cache por perfil:** quem atende clientes é chamado várias vezes por hora e usa cache de 1 h (gravação a 2×). Os demais conversam em rajadas espaçadas e usam 5 min (gravação a 1,25×).
+- **Reuniões aproveitam o cache:** cada fala envia as mesmas ferramentas da conversa, sem permitir o uso (`tool_choice: none`). Assim o início do prompt casa com o cache já gravado.
+- **Mantenedor do cache:** no expediente (seg–sex, 8h–18h, ajustável em `settings.cacheHours`), renova com `max_tokens: 0` o cache de 1 h dos agentes de atendimento ativos.
   - Desligue com `settings.cacheKeepAlive: false`.
   - Para o cache curto, use `IAORG_CACHE_TTL=5m`.
 - **Painel (administradores):** a "folha de pagamento", com custo por agente e por tipo, tarefas concluídas, custo por tarefa, horas na oficina, PRs, mensagens a clientes, taxa de acerto do cache e exportação em CSV.
@@ -745,6 +756,10 @@ Veja `.env.example`.
 | `COMPANY_TZ` | fuso das rotinas e relatórios | `America/Sao_Paulo` |
 | `IAORG_CACHE_TTL` | `5m` para o cache curto | `1h` |
 | `GOOGLE_ADS_API_VERSION` | versão da API do Google Ads | `v26` |
+| `CHAT_DEFAULT_MODEL` | modelo da conversa quando a ficha não define | `claude-haiku-5-5` |
+| `KB_INLINE_TOKENS` | até quantos tokens a base vai inteira no prompt da conversa | `6000` |
+| `CHAT_HEAVY_LIMIT` | ferramentas de trabalho por ciclo de conversa (com oficina ligada) | `3` |
+| `TOOL_RESULT_MAX_CHARS` | corte de resultados longos de ferramenta na conversa | `8000` |
 | `PORT`, `KEYCLOAK_PORT` | portas no host | `3000`, `8081` |
 
 **Em produção:**
@@ -812,7 +827,7 @@ A oficina precisa do `runner` e do Docker. Sem eles, use a stack completa do Doc
 Os testes rodam sem rede e sem custo, como no CI:
 
 ```bash
-for t in access customer routines whatsapp-ads social-images workbench; do node scripts/test-$t.mjs; done
+for t in access customer routines whatsapp-ads social-images economy workbench; do node scripts/test-$t.mjs; done
 ```
 
 | Script | O que cobre |
@@ -822,6 +837,7 @@ for t in access customer routines whatsapp-ads social-images workbench; do node 
 | `test-routines.mjs` | agenda das rotinas |
 | `test-whatsapp-ads.mjs` | WhatsApp (janela de 24 h) e Google Ads |
 | `test-social-images.mjs` | Upload-Post e imagens com IA (fetch falso) |
+| `test-economy.mjs` | economia de tokens: modelo da conversa, base enxuta, cache, limite de trabalho na conversa e memória da empresa |
 | `test-workbench.mjs` | oficina: kits, entrega e bloqueios |
 | `test-knowledge.mjs <arquivo>` | divisão de um arquivo da base em trechos |
 | `test-cache.mjs <empresa> <agente>` | cache real do prompt (gasta poucos centavos) |

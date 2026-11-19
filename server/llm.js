@@ -18,7 +18,8 @@ const READ_MULT = Object.fromEntries(MODELS.map((m) => [m.id, m.cacheRead]));
 
 // Tempo de vida do cache do prompt fixo dos agentes (gravação custa 2× em 1 h, 1,25× em 5 min).
 export const CACHE_TTL = process.env.IAORG_CACHE_TTL === '5m' ? '5m' : '1h';
-export const cacheMark = () => (CACHE_TTL === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' });
+// long=false força o cache de 5 min (para agentes com conversas espaçadas, ver engine.longCache).
+export const cacheMark = (long = true) => (CACHE_TTL === '1h' && long ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' });
 
 // Uso da API -> números usados no custo (gravação de cache separada por TTL).
 export function usageOf(u) {
@@ -55,7 +56,8 @@ export const providerFor = (store) => (store.getSecret('claudeKey') ? 'claude' :
 // model/effort vêm da ficha do agente quando definidos; senão, da configuração da empresa.
 // system pode ser texto ou blocos [{type:'text', text, cache_control}] — os blocos fixos levam o ponto de cache longo
 // e o cache automático (topo) cobre a cauda da conversa.
-export async function callClaude(store, { system, messages, tools, model: agentModel, effort: agentEffort }) {
+// toolChoice { type: 'none' }: manda as ferramentas (para o prefixo casar com o cache da conversa) sem permitir o uso.
+export async function callClaude(store, { system, messages, tools, model: agentModel, effort: agentEffort, toolChoice }) {
   const client = clientFor(store);
   const model = agentModel || store.company.settings.model;
   const effort = agentEffort || store.company.settings.effort;
@@ -64,6 +66,7 @@ export async function callClaude(store, { system, messages, tools, model: agentM
     max_tokens: 16000,
     system,
     ...(tools?.length ? { tools } : {}),
+    ...(tools?.length && toolChoice ? { tool_choice: toolChoice } : {}),
     messages,
     output_config: { effort },
     cache_control: { type: 'ephemeral' },

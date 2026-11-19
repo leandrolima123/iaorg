@@ -1,7 +1,7 @@
 import { Office } from './office.js';
 import { $, $$, esc, api, toast, toastUndo, ic, initials } from './common.js';
 import { renderIntegrations, accessChips, INTEGRATION_NAMES } from './integrations-ui.js';
-import { renderProfile, renderKnowledge, renderApprovals, resetProfileDraft } from './agent-profile.js';
+import { renderProfile, renderKnowledge, renderCompanyMemory, renderApprovals, resetProfileDraft } from './agent-profile.js';
 import { renderFilesPanel, focusFile } from './files-ui.js';
 import { preview as lookPreviewOf, CHARACTERS, ITEMS, partsOf, normalizeLook } from './avatars.js';
 import { renderChatPanel, renderActivityPanel, openLogFor, currentLogAgent, openChatWith, openChatKey } from './chat-ui.js';
@@ -1125,7 +1125,13 @@ function renderTeam() {
     renderKnowledge($('#kbRoot'), { canEdit: isAdmin() }).catch((e) => toast(e.message, 'err'));
     return;
   }
-  panel.innerHTML = head('Equipe', 'Agentes de IA e pessoas no mesmo organograma.', isAdmin() ? `<div class="row"><button class="btn" id="kbOpen">${ic('book-open', 'sm')}Base de conhecimento</button><button class="btn" id="newAgent">${ic('plus', 'sm')}Contratar agente</button><button class="btn" id="newFunction">${ic('cpu', 'sm')}Contratar função</button><a class="btn" href="/onboarding.html?step=team&edit=1">${ic('mail', 'sm')}Convidar pessoa</a></div>` : '') + `
+  if (teamSel === 'mem') {
+    panel.innerHTML = head('Memória da empresa', 'O que vale para toda a equipe: decisões, preferências e resultados que os agentes guardam para os colegas.', `<button class="btn" id="backTeam">${ic('arrow-left', 'sm')}Voltar à equipe</button>`) + '<div id="memRoot"></div>';
+    $('#backTeam').onclick = () => { teamSel = null; renderTeam(); };
+    renderCompanyMemory($('#memRoot'), { canEdit: isAdmin() }).catch((e) => toast(e.message, 'err'));
+    return;
+  }
+  panel.innerHTML = head('Equipe', 'Agentes de IA e pessoas no mesmo organograma.', isAdmin() ? `<div class="row"><button class="btn" id="kbOpen">${ic('book-open', 'sm')}Base de conhecimento</button><button class="btn" id="memOpen">${ic('brain', 'sm')}Memória da empresa</button><button class="btn" id="newAgent">${ic('plus', 'sm')}Contratar agente</button><button class="btn" id="newFunction">${ic('cpu', 'sm')}Contratar função</button><a class="btn" href="/onboarding.html?step=team&edit=1">${ic('mail', 'sm')}Convidar pessoa</a></div>` : '') + `
     <div class="team">
       <div class="roster">
         ${S.agents.map((x) => `<button type="button" class="person ${x.id === teamSel ? 'active' : ''}" data-id="${x.id}">
@@ -1160,6 +1166,7 @@ function renderTeam() {
   });
   $('#newAgent')?.addEventListener('click', () => { teamSel = 'new'; hire.step = 'pick'; hire.key = null; renderTeam(); });
   $('#kbOpen')?.addEventListener('click', () => { teamSel = 'kb'; renderTeam(); });
+  $('#memOpen')?.addEventListener('click', () => { teamSel = 'mem'; renderTeam(); });
   $('#newFunction')?.addEventListener('click', () => { teamSel = 'newfn'; renderTeam(); });
   if ($('#fnRoot')) renderFunctionPanel($('#fnRoot'), { id: a.id, canEdit: isAdmin(), onChange: refresh });
   if ($('#lookRoot')) renderLook($('#lookRoot'), { ...a }, canEdit).catch((e) => { $('#lookRoot').innerHTML = `<p class="error">${esc(e.message)}</p>`; });

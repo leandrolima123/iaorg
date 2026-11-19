@@ -29,7 +29,7 @@ jobs:
           git ls-files '*.js' '*.mjs' | grep -v '^public/vendor/' | while read -r f; do node --check "$f" || exit 1; done
       - name: Testes (sem rede e sem custo)
         run: |
-          for t in access customer routines whatsapp-ads social-images workbench; do
+          for t in access customer routines whatsapp-ads social-images economy workbench; do
             echo "::group::test-$t"; node scripts/test-$t.mjs; echo "::endgroup::"
           done
       - name: Plugin do Claude Code (JSON válido)
