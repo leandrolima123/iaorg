@@ -34,7 +34,7 @@ const SECURITY = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com; media-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; connect-src 'self' blob: data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://www.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://www.googletagmanager.com https://googleads.g.doubleclick.net https://www.google.com https://www.google.com.br https://ad.doubleclick.net; media-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://td.doubleclick.net https://www.googletagmanager.com; connect-src 'self' blob: data: https://www.googletagmanager.com https://googleads.g.doubleclick.net https://www.google.com https://www.google.com.br https://ad.doubleclick.net https://*.google-analytics.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 };
 if (process.env.NODE_ENV === 'production') SECURITY['Strict-Transport-Security'] = 'max-age=31536000';
 
