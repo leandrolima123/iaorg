@@ -38,7 +38,7 @@
     "lucide-static": "^1.72.0",
     "openid-client": "^6.8.9",
     "pg": "^8.23.1",
-    "three": "0.160.0",
+    "three": "0.187.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
