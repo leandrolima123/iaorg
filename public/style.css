@@ -1303,3 +1303,10 @@ details.integ[open] .integ-chev .i { transform: rotate(180deg); }
 /* aviso de segurança no cartão da integração (ex.: PostgreSQL só leitura e VPN) */
 .integ-notice { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--sign-deep); background: #f6ecc8; color: var(--ink); border-radius: 6px; font-size: .88rem; line-height: 1.45; }
 .integ-notice .i { flex: none; margin-top: 2px; color: var(--wait); }
+
+/* WhatsApp pessoal: QR code e lista de conversas */
+.wa-status { margin-bottom: 12px; }
+.wa-qr { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.wa-qr img { background: #fff; padding: 8px; border-radius: 8px; border: 1px solid var(--line, #ddd); }
+.wa-qr ol { margin: 0; padding-left: 18px; max-width: 34ch; }
+.repo-list label.repo select { margin-left: auto; font-size: .82rem; }

@@ -18,6 +18,7 @@ import * as telegram from './telegram.js';
 import * as uploadpost from './uploadpost.js';
 import * as imagegen from './imagegen.js';
 import * as pgdb from './postgres.js';
+import * as waweb from './wa-web.js';
 import { mimeOf, recordWrite } from './files.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -126,6 +127,14 @@ export const CATALOG = [
     configFields: [{ key: 'phoneNumberId', label: 'ID do número no WhatsApp (opcional)', placeholder: 'Vazio = o primeiro número do projeto' }],
     perms: [{ id: 'read', label: 'Ler conversas' }, { id: 'reply', label: 'Responder' }],
     suggest: ['cs', 'vendas'],
+  },
+  {
+    type: 'whatsapp_web', name: 'WhatsApp pessoal (QR code)', category: 'Mensagens', icon: 'smartphone', auth: 'qr', status: 'available',
+    description: 'Conecta o SEU número de WhatsApp como aparelho conectado (igual ao WhatsApp Web), lendo um QR code. Você escolhe os grupos e contatos que os agentes podem ler e responder, e eles são avisados quando alguém marca você. As respostas saem do seu número e, por padrão, passam pela sua aprovação.',
+    notice: 'Atenção: esta conexão não usa a API oficial do WhatsApp. O WhatsApp não permite automação em contas pessoais e pode bloquear o número. Prefira um número secundário, mantenha as respostas com aprovação e libere só os grupos e contatos necessários.',
+    perms: [{ id: 'read', label: 'Ler conversas escolhidas' }, { id: 'reply', label: 'Responder' }],
+    resource: { key: 'chats', label: 'Conversas' },
+    suggest: ['assistente', 'ceo', 'cs', 'vendas', 'sdr'],
   },
   {
     type: 'google_ads', name: 'Google Ads', category: 'Marketing', icon: 'megaphone', auth: 'google', status: 'available',
@@ -246,6 +255,22 @@ function allowedProjects(store, agent) {
   const only = access(agent, 'railway')?.resources || [];
   return only.length ? all.filter((p) => only.includes(p.name) || only.includes(p.id)) : all;
 }
+// WhatsApp pessoal: conversas escolhidas pelo dono (filtradas pelo acesso do agente) + onde marcaram o dono.
+function allowedWaChats(store, agent) {
+  const cfg = conn(store, 'whatsapp_web')?.config || {};
+  const only = access(agent, 'whatsapp_web')?.resources || [];
+  const chosen = (cfg.chats || []).filter((c) => !only.length || only.includes(c.name) || only.includes(c.id));
+  const mentioned = cfg.mentions === 'off' || only.length ? [] : waweb.mentionChats(store, 24).filter((id) => !chosen.some((c) => c.id === id))
+    .map((id) => ({ id, name: waChatName(store, id), kind: id.endsWith('@g.us') ? 'group' : 'contact', viaMention: true }));
+  return [...chosen, ...mentioned];
+}
+function waChatName(store, id) {
+  const c = (conn(store, 'whatsapp_web')?.config?.chats || []).find((x) => x.id === id);
+  if (c) return c.name;
+  const last = waweb.messages(store, id, 50).filter((m) => !m.fromMe && !m.group).pop();
+  return last?.name || (id.endsWith('@g.us') ? 'grupo' : `+${id.split('@')[0]}`);
+}
+const waWho = (store, m) => (m.fromMe ? 'Você' : m.name || `+${String(m.fromAlt || m.from).split('@')[0]}`);
 const crispCtx = (store) => {
   const c = conn(store, 'crisp');
   return { cred: crisp.parseToken(decrypt(c.secret)), tier: c.config?.tier || 'website', site: c.config?.websiteId, nick: c.config?.agentName || '' };
@@ -417,6 +442,11 @@ export function accessSummary(store, agent) {
     if (c.type === 'gmail' || c.type === 'google_calendar') where = ` da conta ${conn(store, c.type).account}`;
     if (c.type === 'railway') where = ` nos projetos ${allowedProjects(store, agent).map((p) => `${p.name} (id ${p.id})`).join(', ') || '(nenhum)'}`;
     if (c.type === 'crisp') where = ` no chat do site ${conn(store, 'crisp').account || ''}`;
+    if (c.type === 'whatsapp_web') {
+      const cfg = conn(store, 'whatsapp_web').config || {};
+      const chats = allowedWaChats(store, agent).filter((x) => !x.viaMention).map((x) => x.name);
+      where = ` no WhatsApp pessoal do dono (${conn(store, 'whatsapp_web').account || 'número conectado'}), nas conversas: ${chats.join(', ') || '(nenhuma escolhida)'}${cfg.mentions === 'off' ? '' : ', e onde alguém marcar o dono'}. As mensagens saem do número do dono: escreva como assistente dele, curto e educado, nunca fale por ele sobre compromissos, dinheiro ou opiniões sem ele ter dito${cfg.mode === 'auto' ? '' : '; cada resposta vai para aprovação dele antes de sair'}`;
+    }
     if (c.type === 'postgres') where = ` no banco ${conn(store, 'postgres').account || ''} (somente leitura: db_schema para ver as tabelas, db_query para consultar; prefira agregações e não exponha dados pessoais sem necessidade)`;
     if (c.type === 'whatsapp') where = ` no número ${conn(store, 'whatsapp').account || ''} (texto livre só até 24 h após a última mensagem do cliente)`;
     if (c.type === 'google_ads') { const cfg = conn(store, 'google_ads').config || {}; where = cfg.customerId ? ` na conta ${cfg.name || cfg.customerId} (moeda ${cfg.currency || '?'}); mudanças vão para aprovação de uma pessoa` : ' (nenhuma conta escolhida ainda)'; }
@@ -531,6 +561,17 @@ export function toolsFor(store, agent) {
   if (can(store, agent, 'whatsapp', 'reply')) {
     tools.push(T('whatsapp_reply', 'Responde o cliente no WhatsApp (texto). Só funciona até 24 h depois da última mensagem do cliente; fora disso, escale.', { telefone: S('Telefone do cliente (com DDI)'), text: S('Mensagem para o cliente: curta, sem markdown pesado') }, ['telefone', 'text']));
   }
+  if (can(store, agent, 'whatsapp_web', 'read')) {
+    tools.push(
+      T('wa_conversas', 'Lista as conversas do WhatsApp pessoal do dono que você pode ler (grupos e contatos escolhidos, e onde marcaram o dono), com a última mensagem de cada uma.'),
+      T('wa_mensagens', 'Lê as mensagens recentes de uma conversa do WhatsApp pessoal (mais antigas primeiro). Cada mensagem tem um id para citar na resposta.', { conversa: S('id da conversa (de wa_conversas)'), limit: { type: 'number', description: 'Quantas (padrão 30)' } }, ['conversa']),
+    );
+  }
+  if (can(store, agent, 'whatsapp_web', 'reply')) {
+    tools.push(T('wa_responder', 'Envia uma mensagem de texto numa conversa do WhatsApp pessoal do dono (sai do número dele). Use reply_to para responder a uma mensagem específica, como quando marcaram o dono num grupo.', {
+      conversa: S('id da conversa'), text: S('Mensagem: curta, natural, sem markdown'), reply_to: S('Opcional: id da mensagem a citar'),
+    }, ['conversa', 'text']));
+  }
   if (can(store, agent, 'postgres', 'read')) {
     tools.push(
       T('db_schema', 'Mostra a estrutura do banco PostgreSQL da empresa: sem table, lista as tabelas e views (com estimativa de linhas); com table, as colunas e os tipos. Use antes de escrever consultas.', { table: S('Opcional: tabela, ex.: public.pedidos') }),
@@ -604,7 +645,7 @@ const deny = (what) => ({ error: `Você não tem acesso para ${what}. Peça ao d
 // ---------------- fila de aprovação ----------------
 // Ferramentas que falam com clientes. No modo "rascunho para aprovação" elas viram um item
 // na fila (Minha mesa) e só são executadas quando uma pessoa aprova.
-const OUTBOUND = { email_reply: 'email', email_send: 'email', gmail_send: 'email', chat_reply: 'chat', whatsapp_reply: 'whatsapp' };
+const OUTBOUND = { email_reply: 'email', email_send: 'email', gmail_send: 'email', chat_reply: 'chat', whatsapp_reply: 'whatsapp', wa_responder: 'whatsapp' };
 // Mudanças que mexem em dinheiro: SEMPRE passam por uma pessoa (não dependem do modo de envio).
 const ADS_CHANGES = new Set(['ads_campaign_status', 'ads_set_budget', 'ads_add_negative']);
 // Publicações em redes sociais: aprovação de uma pessoa, a não ser que a empresa escolha "automática".
@@ -632,6 +673,15 @@ async function previewOf(store, name, input) {
       const msgs = (await kapso.messages(w.key, w.pnid, { phone: input.telefone, limit: 8 })).reverse();
       const nome = msgs.find((m) => m.direction === 'inbound' && m.name)?.name;
       return { para: `${nome ? `${nome} · ` : ''}+${digits(input.telefone)} (WhatsApp)`, conversa: msgs.map((m) => `${m.direction === 'inbound' ? 'Cliente' : 'Empresa'}: ${m.text}`).join('\n').slice(0, 1500) };
+    }
+    if (name === 'wa_responder') {
+      const msgs = waweb.messages(store, input.conversa, 8);
+      const quoted = input.reply_to ? msgs.find((m) => m.id === input.reply_to) : null;
+      return {
+        para: `${waChatName(store, input.conversa)}${input.conversa.endsWith('@g.us') ? ' (grupo)' : ''} · WhatsApp pessoal`,
+        assunto: quoted ? `respondendo a ${waWho(store, quoted)}: "${quoted.text.slice(0, 120)}"` : undefined,
+        conversa: msgs.map((m) => `${waWho(store, m)}: ${m.text}`).join('\n').slice(0, 1500),
+      };
     }
     if (name === 'social_publicar') {
       const p = socialProfile(store);
@@ -717,9 +767,16 @@ export async function escalateNote(rt, agent, sessionId, text) {
 export async function executeIntegrationTool(rt, agent, name, input, taskHint, opts = {}) {
   const store = rt.store;
   const say = (bubble) => rt.setStatus(agent.id, { status: 'working', bubble });
+  if (name === 'wa_responder' && !opts.approved) {
+    // Valida antes de virar rascunho: só conversas liberadas, e o WhatsApp precisa estar ligado.
+    if (!can(store, agent, 'whatsapp_web', 'reply')) return deny('responder no WhatsApp pessoal');
+    if (!allowedWaChats(store, agent).some((c) => c.id === input.conversa)) return { error: `Conversa fora do seu acesso: ${input.conversa}. Use wa_conversas para ver as liberadas.` };
+    if (!String(input.text || '').trim()) return { error: 'Escreva a mensagem (text).' };
+    if (conn(store, 'whatsapp_web').config?.mode !== 'auto') return queueApproval(rt, agent, name, input);
+  }
   const channel = OUTBOUND[name];
   if (channel && !opts.approved) {
-    const perm = { email_reply: ['resend', 'send'], email_send: ['resend', 'send'], gmail_send: ['gmail', 'send'], chat_reply: ['crisp', 'reply'], whatsapp_reply: ['whatsapp', 'reply'] }[name];
+    const perm = { email_reply: ['resend', 'send'], email_send: ['resend', 'send'], gmail_send: ['gmail', 'send'], chat_reply: ['crisp', 'reply'], whatsapp_reply: ['whatsapp', 'reply'], wa_responder: ['whatsapp_web', 'reply'] }[name];
     if (can(store, agent, ...perm) && (opts.forceApproval || profileOf(agent).sendMode[channel] !== 'auto')) return queueApproval(rt, agent, name, input);
   }
   if (ADS_CHANGES.has(name) && !opts.approved) {
@@ -918,6 +975,37 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
       return { ok: true };
     }
     // ---------- WhatsApp (Kapso) ----------
+    case 'wa_conversas': {
+      if (!can(store, agent, 'whatsapp_web', 'read')) return deny('ler o WhatsApp pessoal');
+      const st = waweb.status(store);
+      const list = allowedWaChats(store, agent).map((c) => {
+        const last = waweb.messages(store, c.id, 30);
+        const m = last[last.length - 1];
+        const pend = last.filter((x) => (x.mentionsMe || x.repliesToMe) && !last.some((y) => y.fromMe && y.ts > x.ts));
+        return { conversa: c.id, nome: c.name, tipo: c.kind === 'group' ? 'grupo' : 'contato', ...(c.viaMention ? { motivo: 'marcaram o dono aqui' } : {}),
+          ultima: m ? `${waWho(store, m)}: ${m.text.slice(0, 160)}` : '(nada guardado ainda)', quando: m ? new Date(m.ts).toISOString() : null,
+          mencoes_sem_resposta: pend.map((x) => ({ id: x.id, de: waWho(store, x), texto: x.text.slice(0, 200) })) };
+      });
+      return { conectado: st.status === 'open', conversas: list };
+    }
+    case 'wa_mensagens': {
+      if (!can(store, agent, 'whatsapp_web', 'read')) return deny('ler o WhatsApp pessoal');
+      if (!allowedWaChats(store, agent).some((c) => c.id === input.conversa)) return { error: `Conversa fora do seu acesso: ${input.conversa}. Use wa_conversas.` };
+      say('Lendo o WhatsApp');
+      return { conversa: waChatName(store, input.conversa), mensagens: waweb.messages(store, input.conversa, input.limit).map((m) => ({
+        id: m.id, de: waWho(store, m), texto: m.text, quando: new Date(m.ts).toISOString(), ...(m.mentionsMe ? { marcou_o_dono: true } : {}), ...(m.repliesToMe ? { respondeu_o_dono: true } : {}),
+      })) };
+    }
+    case 'wa_responder': {
+      if (!can(store, agent, 'whatsapp_web', 'reply')) return deny('responder no WhatsApp pessoal');
+      const prefix = conn(store, 'whatsapp_web').config?.prefix ?? '';
+      say('Respondendo no WhatsApp');
+      try {
+        const r = await waweb.send(store, input.conversa, `${prefix}${String(input.text).trim()}`, input.reply_to);
+        rt.logEvent('system', agent.id, `${agent.name} respondeu no WhatsApp pessoal (${waChatName(store, input.conversa)}).`);
+        return { ok: true, enviado: true, id: r.id };
+      } catch (e) { return { error: `WhatsApp: ${e.message}` }; }
+    }
     case 'db_schema':
     case 'db_query': {
       if (!can(store, agent, 'postgres', 'read')) return deny('consultar o banco de dados');
@@ -1128,7 +1216,52 @@ async function socialTool(rt, agent, name, input, taskHint, opts) {
 }
 
 // ---------------- caixas de entrada: avisa os agentes quando chega e-mail ----------------
+// ---------- WhatsApp pessoal: avisos aos agentes ----------
+let waRuntimeFor = null;
+const waPending = new Map(); // `${companyId}|${chat}` -> { timer, msgs }
+const waHooks = {
+  onStatus(store, st) {
+    const c = ensure(store).whatsapp_web;
+    if (!c) return;
+    if (st.status === 'open' && st.me) { c.account = `${st.me.name ? `${st.me.name} · ` : ''}+${st.me.phone}`; c.error = ''; }
+    else if (st.error) c.error = st.error;
+    store.save();
+    try { waRuntimeFor?.(store).pushSnapshot(); } catch { /* sem runtime ainda */ }
+  },
+  onMessage(store, m) {
+    if (!waRuntimeFor || store.state.paused || store.company?.onboardingStep !== 'done') return;
+    const cfg = conn(store, 'whatsapp_web')?.config || {};
+    const chosen = (cfg.chats || []).find((c) => c.id === m.chat || c.id === m.chatAlt);
+    const marked = m.mentionsMe || m.repliesToMe;
+    // Contato escolhido: toda mensagem. Grupo escolhido: só quando marcam você, a não ser que o gatilho seja "todas".
+    const wake = chosen ? (!m.group || chosen.trigger === 'all' || marked) : (cfg.mentions !== 'off' && marked);
+    if (!wake) return;
+    const key = `${store.id}|${m.chat}`;
+    const p = waPending.get(key) || { msgs: [] };
+    p.msgs.push(m);
+    clearTimeout(p.timer);
+    // Junta mensagens seguidas (até 20 s) num aviso só, para não acordar o agente a cada linha.
+    p.timer = setTimeout(() => { waPending.delete(key); notifyWa(store, m.chat, p.msgs, !!chosen); }, marked ? 5000 : 20000);
+    waPending.set(key, p);
+  },
+};
+function notifyWa(store, chat, msgs, chosen) {
+  const rt = waRuntimeFor(store);
+  const name = waChatName(store, chat);
+  const readers = store.aiAgents().filter((a) => can(store, a, 'whatsapp_web', 'read') && allowedWaChats(store, a).some((c) => c.id === chat));
+  const marked = msgs.filter((x) => x.mentionsMe || x.repliesToMe);
+  const lines = msgs.slice(-6).map((x) => `${waWho(store, x)}${x.mentionsMe ? ' (marcou você)' : x.repliesToMe ? ' (respondeu você)' : ''}: "${x.text.slice(0, 300)}" [id ${x.id}]`).join('\n');
+  for (const a of readers) {
+    rt.postMessage('caixa:whatsapp_web', a.id, `${marked.length ? 'Marcaram o dono' : 'Nova mensagem'} no WhatsApp pessoal dele, ${chat.endsWith('@g.us') ? `no grupo "${name}"` : `na conversa com ${name}`}${chosen ? '' : ' (conversa não escolhida: só responda à menção)'}.\nconversa: ${chat}\n${lines}\nLeia mais com wa_mensagens se precisar. Responda com wa_responder (use reply_to com o id da mensagem) só se fizer sentido e couber a você; se for algo que só o dono pode decidir, avise o dono em vez de responder.`);
+  }
+}
+
 export function startInboxPoller({ allCompanies, runtimeFor }) {
+  waRuntimeFor = runtimeFor;
+  // Retoma as sessões do WhatsApp pessoal já conectadas (a sessão fica salva em disco).
+  setTimeout(() => {
+    for (const store of allCompanies()) if (conn(store, 'whatsapp_web')) waweb.start(store, waHooks).catch((e) => markError(store, 'whatsapp_web', e));
+  }, 3000);
   const tick = async () => {
     for (const store of allCompanies()) {
       if (store.state.paused || store.company.onboardingStep !== 'done') continue;
@@ -1353,6 +1486,23 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     res.json({ ok: true, account });
   }));
 
+  // WhatsApp pessoal: gera o QR code (ou retoma a sessão salva).
+  app.post('/api/integrations/whatsapp_web/start', requireCompany, need('owner'), wrap(async (req, res) => {
+    const store = req.company;
+    waRuntimeFor ||= runtimeFor;
+    const prev = ensure(store).whatsapp_web;
+    ensure(store).whatsapp_web = { connected: true, account: prev?.account || '', error: '', connectedAt: prev?.connectedAt || Date.now(),
+      config: { chats: [], mentions: 'on', mode: 'approval', prefix: '', ...(prev?.config || {}) } };
+    store.save();
+    try { res.json(await waweb.start(store, waHooks)); } catch (e) { bad(res, `Não foi possível iniciar o WhatsApp: ${e.message}`); }
+  }));
+  app.get('/api/integrations/whatsapp_web/status', requireCompany, need('admin'), (req, res) => {
+    res.json({ ...waweb.status(req.company), account: conn(req.company, 'whatsapp_web')?.account || '' });
+  });
+  app.get('/api/integrations/whatsapp_web/chats', requireCompany, need('admin'), wrap(async (req, res) => {
+    try { res.json(await waweb.listChats(req.company)); } catch (e) { bad(res, e.message); }
+  }));
+
   app.put('/api/integrations/:type/config', requireCompany, need('admin'), wrap(async (req, res) => {
     const store = req.company;
     const c = conn(store, req.params.type);
@@ -1391,6 +1541,14 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
       try { c.account = await refreshDiscovery(def.type, decrypt(c.secret), next); } catch (e) { return bad(res, e.message); }
       c.config = next;
       c.error = '';
+    } else if (req.params.type === 'whatsapp_web') {
+      if (Array.isArray(req.body?.chats)) {
+        c.config.chats = req.body.chats.filter((x) => /@(g\.us|s\.whatsapp\.net|lid)$/.test(String(x?.id || ''))).slice(0, 50)
+          .map((x) => ({ id: str(x.id, 80), name: str(x.name, 80) || str(x.id, 80), kind: String(x.id).endsWith('@g.us') ? 'group' : 'contact', trigger: x.trigger === 'all' ? 'all' : 'mention' }));
+      }
+      if (req.body?.mentions !== undefined) c.config.mentions = req.body.mentions === 'off' ? 'off' : 'on';
+      if (req.body?.mode !== undefined) c.config.mode = req.body.mode === 'auto' ? 'auto' : 'approval';
+      if (req.body?.prefix !== undefined) c.config.prefix = String(req.body.prefix).slice(0, 30);
     } else if (req.params.type === 'google_ads') {
       const want = str(req.body?.customerId, 20).replace(/\D/g, '');
       const list = await gads.accounts(await googleToken(store, 'google_ads'));
@@ -1477,6 +1635,8 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     for (const a of store.state.agents) if (a.access?.[def.type]) delete a.access[def.type];
     store.save();
     if (def.type === 'telegram') telegram.onDisconnect(store);
+    // Sai do aparelho conectado no celular e apaga a sessão e as mensagens guardadas.
+    if (def.type === 'whatsapp_web') waweb.stop(store, { logout: true }).catch(() => {});
     runtimeFor(store).logEvent('system', req.member.id, `${def.name} desconectado. Os acessos dos agentes foram removidos.`);
     refresh(store);
     res.json({ ok: true });
