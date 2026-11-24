@@ -21,7 +21,7 @@ const isGroup = (jid) => String(jid || '').endsWith('@g.us');
 function dirOf(store) { return path.join(store.dir, 'whatsapp-web'); }
 
 function loadMessages(store) {
-  try { return JSON.parse(fs.readFileSync(path.join(dirOf(store), 'messages.json'), 'utf8')); } catch { return { chats: {}, recent: {} }; }
+  try { return { contacts: {}, ...JSON.parse(fs.readFileSync(path.join(dirOf(store), 'messages.json'), 'utf8')) }; } catch { return { chats: {}, recent: {}, contacts: {} }; }
 }
 
 function textOf(m) {
@@ -63,7 +63,8 @@ export async function start(store, hooks) {
 
   const sock = B.makeWASocket({
     auth: state, logger: silent, version, browser: B.Browsers.ubuntu('IAORG'),
-    markOnlineOnConnect: false, syncFullHistory: false, shouldSyncHistoryMessage: () => false,
+    // Sincronização inicial só para a agenda (nomes dos contatos e das conversas); o conteúdo antigo das mensagens é descartado.
+    markOnlineOnConnect: false, syncFullHistory: false, shouldSyncHistoryMessage: () => true,
     generateHighQualityLinkPreview: false, getMessage: async () => undefined,
   });
   s.sock = sock;
@@ -98,6 +99,14 @@ export async function start(store, hooks) {
       setTimeout(() => { if (!s.stopped) { s.status = 'reconnecting'; start(store, hooks).catch(() => {}); } }, code === B.DisconnectReason.restartRequired ? 500 : 5000);
     }
   });
+  // Agenda: só nome e número, para você escolher quais contatos liberar.
+  const saveContacts = (list) => { for (const ct of list || []) addContactName(s, ct); persist(store, s); };
+  sock.ev.on('contacts.upsert', saveContacts);
+  sock.ev.on('contacts.update', saveContacts);
+  sock.ev.on('messaging-history.set', ({ contacts, chats }) => {
+    saveContacts(contacts);
+    for (const ch of chats || []) if (ch.id && !isGroup(ch.id) && ch.name) addContactName(s, { id: ch.id, name: ch.name });
+  });
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     for (const m of messages) {
       const rec = record(store, s, m);
@@ -107,17 +116,32 @@ export async function start(store, hooks) {
   return status(store);
 }
 
+function addContactName(s, ct) {
+  const id = ct?.id;
+  if (!id || isGroup(id) || id === 'status@broadcast' || id.endsWith('@broadcast') || id.endsWith('@newsletter')) return;
+  const book = (s.data.contacts ||= {});
+  const prev = book[id] || {};
+  const pn = ct.phoneNumber || (id.endsWith('@s.whatsapp.net') ? id : prev.pn);
+  book[id] = { name: ct.name || prev.name || '', notify: ct.notify || ct.verifiedName || prev.notify || '', pn: pn ? bare(pn) : '', lid: ct.lid || (id.endsWith('@lid') ? id : prev.lid || '') };
+}
+
 /** Guarda a mensagem se ela importa (conversa escolhida ou menção a você). Devolve o registro. */
 function record(store, s, m) {
-  const chat = m.key?.remoteJid;
+  let chat = m.key?.remoteJid;
   if (!chat || chat === 'status@broadcast' || !m.message) return null;
+  let chatAlt = m.key.remoteJidAlt || null;
+  // Conversa individual chegando pelo LID: guarda pelo número (@s.whatsapp.net), o mesmo id que você escolhe e usa para enviar.
+  if (chat.endsWith('@lid')) {
+    const pn = chatAlt?.endsWith('@s.whatsapp.net') ? chatAlt : s.data.contacts?.[chat]?.pn;
+    if (pn) { chatAlt = chat; chat = bare(pn); }
+  }
   const text = textOf(m);
   if (!text) return null;
   const ctx = ctxOf(m);
   const me = s.me || {};
   const mine = (j) => j && [me.id, me.lid].filter(Boolean).includes(bare(j));
   const rec = {
-    id: m.key.id, chat, chatAlt: m.key.remoteJidAlt || null, group: isGroup(chat), fromMe: !!m.key.fromMe,
+    id: m.key.id, chat, chatAlt, group: isGroup(chat), fromMe: !!m.key.fromMe,
     from: m.key.participant || chat, fromAlt: m.key.participantAlt || m.key.remoteJidAlt || null, name: m.pushName || '',
     text: String(text).slice(0, 2000), ts: (+m.messageTimestamp || Date.now() / 1000) * 1000,
     mentionsMe: (ctx?.mentionedJid || []).some(mine), repliesToMe: mine(ctx?.participant),
@@ -167,9 +191,41 @@ export async function listChats(store) {
   const s = live(store);
   const groups = Object.values(await s.sock.groupFetchAllParticipating()).map((g) => ({ id: g.id, name: g.subject || g.id, kind: 'group', size: g.participants?.length || 0 }));
   for (const g of groups) if (s.data.recent[g.id]) s.data.recent[g.id].name = g.name;
-  const people = Object.entries(s.data.recent).filter(([id, r]) => !r.group && !isGroup(id))
-    .map(([id, r]) => ({ id, name: r.name || `+${(r.alt || id).split('@')[0]}`, phone: (r.alt || id).endsWith('@s.whatsapp.net') ? (r.alt || id).split('@')[0] : '', kind: 'contact', ts: r.ts }));
-  return { groups: groups.sort((a, b) => a.name.localeCompare(b.name)), contacts: people.slice(0, 100) };
+  return { groups: groups.sort((a, b) => a.name.localeCompare(b.name)), contacts: contactList(s) };
+}
+
+/** Agenda + conversas recentes, sem repetir a mesma pessoa (número e LID). Recentes primeiro. */
+function contactList(s) {
+  const out = new Map();
+  const phoneOf = (id, alt) => [alt, id].map((j) => String(j || '')).find((j) => j.endsWith('@s.whatsapp.net'))?.split('@')[0] || '';
+  const keyOf = (id, alt, lid) => phoneOf(id, alt) || lid || id;
+  for (const [id, r] of Object.entries(s.data.recent || {})) {
+    if (r.group || isGroup(id)) continue;
+    const book = s.data.contacts?.[id] || {};
+    const k = keyOf(id, r.alt, book.lid);
+    out.set(k, { id, name: book.name || r.name || book.notify || '', phone: phoneOf(id, r.alt) || (book.pn || '').split('@')[0], kind: 'contact', ts: r.ts, recent: true });
+  }
+  for (const [id, b] of Object.entries(s.data.contacts || {})) {
+    const k = keyOf(id, b.pn, b.lid);
+    if (out.has(k)) { const o = out.get(k); o.name ||= b.name || b.notify; continue; }
+    if (!b.name && !b.notify) continue; // sem nome na agenda nem no perfil: aparece quando mandar mensagem
+    // Prefere o número (@s.whatsapp.net) como id da conversa: é o que o WhatsApp aceita para enviar.
+    out.set(k, { id: b.pn || id, name: b.name || b.notify, phone: (b.pn || '').split('@')[0], kind: 'contact', ts: 0, saved: !!b.name });
+  }
+  return [...out.values()].map((x) => ({ ...x, name: x.name || (x.phone ? `+${x.phone}` : 'contato') }))
+    .sort((a, b) => (b.ts - a.ts) || (b.saved - a.saved) || a.name.localeCompare(b.name)).slice(0, 2000);
+}
+
+/** Confere um número no WhatsApp (para liberar um contato que ainda não apareceu na lista). */
+export async function lookupPhone(store, phone) {
+  const s = live(store);
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 10) throw new Error('Informe o número com DDI e DDD, ex.: 5511999998888.');
+  const [r] = await s.sock.onWhatsApp(digits);
+  if (!r?.exists) throw new Error(`O número +${digits} não tem WhatsApp.`);
+  const id = bare(r.jid);
+  const book = s.data.contacts?.[id] || {};
+  return { id, name: book.name || book.notify || `+${digits}`, phone: digits, kind: 'contact' };
 }
 
 /** Mensagens guardadas de uma conversa (mais antigas primeiro). */
@@ -192,7 +248,8 @@ export async function send(store, chat, text, replyTo) {
   const s = live(store);
   const raw = replyTo ? s.raw.get(`${chat}|${replyTo}`) : null;
   const sent = await s.sock.sendMessage(chat, { text: String(text).slice(0, 4000) }, raw ? { quoted: raw } : {});
-  record(store, s, sent);
+  const rec = record(store, s, sent);
+  if (rec) { rec.byAgent = true; persist(store, s); } // na conversa: mensagem do dono escrita por um agente
   return { id: sent?.key?.id };
 }
 

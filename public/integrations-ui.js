@@ -241,8 +241,9 @@ export async function renderIntegrations(root, ctx) {
         ${isAdmin ? `<button type="button" class="btn small" data-pick-wa>${ic('list-checks', 'sm')}Escolher grupos e contatos</button><div class="repo-list hidden" data-wa-list></div>` : ''}
         <form class="integ-form" data-generic-config>
           <label class="field"><span>Quando marcam você em outros grupos</span>${sel('mentions', [['on', 'Avisar os agentes (eles podem responder só àquela menção)'], ['off', 'Ignorar']], cfg.mentions || 'on')}</label>
+          <label class="field"><span>Como os agentes escrevem</span>${sel('persona', [['owner', 'Como eu, em primeira pessoa (continuam a conversa no meu estilo)'], ['assistant', 'Como meu assistente']], cfg.persona || 'assistant')}</label>
           <label class="field"><span>Respostas dos agentes</span>${sel('mode', [['approval', 'Cada resposta passa pela minha aprovação'], ['auto', 'Automáticas (saem direto do meu número)']], cfg.mode || 'approval')}</label>
-          <label class="field"><span>Prefixo nas mensagens dos agentes (opcional)</span><input name="prefix" value="${esc(cfg.prefix || '')}" placeholder="Ex.: 🤖 Assistente: " autocomplete="off" ${isAdmin ? '' : 'disabled'}></label>
+          <label class="field"><span>Prefixo nas mensagens dos agentes (opcional, só no modo assistente)</span><input name="prefix" value="${esc(cfg.prefix || '')}" placeholder="Ex.: 🤖 Assistente: " autocomplete="off" ${isAdmin ? '' : 'disabled'}></label>
           <p class="hint">O IAORG só guarda mensagens das conversas escolhidas e das menções a você, não marca nada como lido e não aparece online.</p>
           ${isAdmin ? '<div><button class="btn small">Salvar</button></div>' : ''}
         </form></div>`;
@@ -489,15 +490,58 @@ export async function renderIntegrations(root, ctx) {
     box.innerHTML = '<p class="hint" style="padding:12px">Carregando grupos e conversas…</p>';
     try {
       const { groups, contacts } = await api('GET', '/api/integrations/whatsapp_web/chats');
-      const cur = Object.fromEntries((connected.whatsapp_web?.config.chats || []).map((x) => [x.id, x]));
-      const row = (x) => `<label class="repo"><input type="checkbox" value="${esc(x.id)}" data-name="${esc(x.name)}" ${cur[x.id] ? 'checked' : ''}>
-        <b>${esc(x.name)}</b><span class="hint">${x.kind === 'group' ? `grupo · ${x.size} participantes` : x.phone ? `+${esc(x.phone)}` : 'contato'}</span>
-        ${x.kind === 'group' ? `<select data-trigger aria-label="Quando avisar os agentes em ${esc(x.name)}"><option value="mention">Só quando me marcam</option><option value="all" ${cur[x.id]?.trigger === 'all' ? 'selected' : ''}>Todas as mensagens</option></select>` : ''}</label>`;
-      box.innerHTML = `<p class="hint" style="padding:10px 12px 0">Grupos (${groups.length})</p>${groups.map(row).join('') || '<p class="hint" style="padding:12px">Nenhum grupo.</p>'}
-        <p class="hint" style="padding:10px 12px 0">Contatos com mensagens recentes (${contacts.length}). Quem não aparece aqui surge assim que mandar uma mensagem.</p>${contacts.map(row).join('') || '<p class="hint" style="padding:12px">Nenhuma conversa recente desde a conexão.</p>'}
-        <div style="padding:10px 12px"><button type="button" class="btn small primary" data-save-wa>Salvar conversas</button></div>`;
+      // Escolhidos ficam num mapa: a busca filtra a lista sem perder o que já foi marcado.
+      const sel = new Map((connected.whatsapp_web?.config.chats || []).map((x) => [x.id, { ...x }]));
+      const all = [...groups, ...contacts];
+      const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const sub = (x) => (x.kind === 'group' ? `grupo · ${x.size} participantes` : x.phone ? `+${x.phone}` : 'contato');
+      const row = (x) => `<label class="repo"><input type="checkbox" value="${esc(x.id)}" ${sel.has(x.id) ? 'checked' : ''}>
+        <b>${esc(x.name)}</b><span class="hint">${esc(sub(x))}</span>
+        ${x.kind === 'group' ? `<select data-trigger aria-label="Quando avisar os agentes em ${esc(x.name)}"><option value="mention">Só quando me marcam</option><option value="all" ${sel.get(x.id)?.trigger === 'all' ? 'selected' : ''}>Todas as mensagens</option></select>` : ''}</label>`;
+      box.innerHTML = `<div class="wa-pick">
+          <input type="search" data-wa-q placeholder="Buscar grupo, contato ou número (ex.: 5511999998888)" aria-label="Buscar grupo ou contato" autocomplete="off">
+          <div class="wa-chosen" data-wa-chosen></div>
+          <div data-wa-rows></div>
+          <div class="row" style="padding:10px 12px;gap:8px"><button type="button" class="btn small primary" data-save-wa>Salvar conversas</button><span class="hint" data-wa-count></span></div>
+        </div>`;
+      const q = $('[data-wa-q]', box);
+      const paintChosen = () => {
+        $('[data-wa-chosen]', box).innerHTML = sel.size
+          ? [...sel.values()].map((x) => `<span class="chip on">${esc(x.name)}<button type="button" data-unwa="${esc(x.id)}" aria-label="Remover ${esc(x.name)}">×</button></span>`).join('')
+          : '<span class="hint">Nada escolhido ainda.</span>';
+        $('[data-wa-count]', box).textContent = `${sel.size} escolhida(s)`;
+        $$('[data-unwa]', box).forEach((b2) => b2.onclick = () => { sel.delete(b2.dataset.unwa); paintChosen(); paintRows(); });
+      };
+      const paintRows = () => {
+        const t = norm(q.value.trim());
+        const digits = q.value.replace(/\D/g, '');
+        const hit = (x) => !t || norm(x.name).includes(t) || (digits.length >= 4 && String(x.phone || '').includes(digits));
+        const g = groups.filter(hit).slice(0, 60);
+        const c = contacts.filter(hit).slice(0, 80);
+        const byPhone = digits.length >= 10 && !contacts.some((x) => x.phone === digits);
+        $('[data-wa-rows]', box).innerHTML = `
+          <p class="hint" style="padding:10px 12px 0">Grupos (${g.length}${t ? ` de ${groups.length}` : ''})</p>${g.map(row).join('') || '<p class="hint" style="padding:6px 12px">Nenhum grupo.</p>'}
+          <p class="hint" style="padding:10px 12px 0">Contatos (${c.length}${c.length === 80 ? '+' : ''}${t ? ` de ${contacts.length}` : ''}): agenda e conversas recentes</p>${c.map(row).join('') || '<p class="hint" style="padding:6px 12px">Nenhum contato com esse nome.</p>'}
+          ${byPhone ? `<div style="padding:6px 12px"><button type="button" class="btn small" data-wa-add="${esc(digits)}">${ic('plus', 'sm')}Adicionar o número +${esc(digits)}</button></div>` : ''}
+          ${!t ? '<p class="hint" style="padding:6px 12px">Não achou alguém? Busque pelo nome ou digite o número com DDI e DDD.</p>' : ''}`;
+        $$('[data-wa-rows] input[type=checkbox]', box).forEach((i) => i.onchange = () => {
+          const x = all.find((y) => y.id === i.value);
+          if (i.checked) sel.set(x.id, { id: x.id, name: x.name, kind: x.kind, trigger: $('[data-trigger]', i.closest('label'))?.value || 'mention' });
+          else sel.delete(x.id);
+          paintChosen();
+        });
+        $$('[data-wa-rows] [data-trigger]', box).forEach((s) => s.onchange = () => { const id = $('input', s.closest('label')).value; if (sel.has(id)) sel.get(id).trigger = s.value; });
+        const add = $('[data-wa-add]', box);
+        if (add) add.onclick = async () => {
+          add.disabled = true;
+          try { const x = await api('GET', `/api/integrations/whatsapp_web/lookup?phone=${encodeURIComponent(add.dataset.waAdd)}`); contacts.unshift(x); all.push(x); sel.set(x.id, { ...x, trigger: 'mention' }); q.value = ''; paintChosen(); paintRows(); toast(`${x.name} adicionado`); }
+          catch (err) { toast(err.message, 'err'); add.disabled = false; }
+        };
+      };
+      q.oninput = paintRows;
+      paintChosen(); paintRows(); q.focus();
       $('[data-save-wa]', box).onclick = async () => {
-        const chats = $$('input:checked', box).map((i) => ({ id: i.value, name: i.dataset.name, trigger: $('[data-trigger]', i.closest('label'))?.value || 'mention' }));
+        const chats = [...sel.values()].map(({ id, name, trigger }) => ({ id, name, trigger: trigger || 'mention' }));
         try { await api('PUT', '/api/integrations/whatsapp_web/config', { chats }); await after(`${chats.length} conversa(s) liberada(s)`); } catch (err) { toast(err.message, 'err'); }
       };
     } catch (err) { box.innerHTML = `<p class="error" style="padding:12px">${esc(err.message)}</p>`; }

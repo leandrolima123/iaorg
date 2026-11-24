@@ -270,7 +270,10 @@ function waChatName(store, id) {
   const last = waweb.messages(store, id, 50).filter((m) => !m.fromMe && !m.group).pop();
   return last?.name || (id.endsWith('@g.us') ? 'grupo' : `+${id.split('@')[0]}`);
 }
-const waWho = (store, m) => (m.fromMe ? 'Você' : m.name || `+${String(m.fromAlt || m.from).split('@')[0]}`);
+const waOwner = (store) => (store.owner?.()?.name || 'dono').split(' ')[0];
+const waWho = (store, m) => (m.fromMe ? `${waOwner(store)} (dono${m.byAgent ? ', enviada por agente' : ''})` : m.name || `+${String(m.fromAlt || m.from).split('@')[0]}`);
+// Como os agentes escrevem no WhatsApp pessoal: em primeira pessoa, como o dono, ou como assistente dele.
+const waAsOwner = (store) => conn(store, 'whatsapp_web')?.config?.persona === 'owner';
 const crispCtx = (store) => {
   const c = conn(store, 'crisp');
   return { cred: crisp.parseToken(decrypt(c.secret)), tier: c.config?.tier || 'website', site: c.config?.websiteId, nick: c.config?.agentName || '' };
@@ -445,7 +448,9 @@ export function accessSummary(store, agent) {
     if (c.type === 'whatsapp_web') {
       const cfg = conn(store, 'whatsapp_web').config || {};
       const chats = allowedWaChats(store, agent).filter((x) => !x.viaMention).map((x) => x.name);
-      where = ` no WhatsApp pessoal do dono (${conn(store, 'whatsapp_web').account || 'número conectado'}), nas conversas: ${chats.join(', ') || '(nenhuma escolhida)'}${cfg.mentions === 'off' ? '' : ', e onde alguém marcar o dono'}. As mensagens saem do número do dono: escreva como assistente dele, curto e educado, nunca fale por ele sobre compromissos, dinheiro ou opiniões sem ele ter dito${cfg.mode === 'auto' ? '' : '; cada resposta vai para aprovação dele antes de sair'}`;
+      where = ` no WhatsApp pessoal do dono (${conn(store, 'whatsapp_web').account || 'número conectado'}), nas conversas: ${chats.join(', ') || '(nenhuma escolhida)'}${cfg.mentions === 'off' ? '' : ', e onde alguém marcar o dono'}. As mensagens saem do número do dono. ${waAsOwner(store)
+        ? `Escreva COMO ELE, em primeira pessoa, no estilo das mensagens dele na conversa (tamanho, tom, gírias, emojis); não diga que é assistente nem IA. Antes de responder, leia o histórico (wa_mensagens) e continue a conversa de onde parou. Se a resposta depender de algo que só ele sabe (compromisso, valor, prazo, opinião), pergunte a ele antes (send_message) com sua sugestão de resposta`
+        : 'Escreva como assistente dele, curto e educado; nunca fale por ele sobre compromissos, dinheiro ou opiniões sem ele ter dito'}${cfg.mode === 'auto' ? '' : '; cada resposta vai para aprovação dele antes de sair'}`;
     }
     if (c.type === 'postgres') where = ` no banco ${conn(store, 'postgres').account || ''} (somente leitura: db_schema para ver as tabelas, db_query para consultar; prefira agregações e não exponha dados pessoais sem necessidade)`;
     if (c.type === 'whatsapp') where = ` no número ${conn(store, 'whatsapp').account || ''} (texto livre só até 24 h após a última mensagem do cliente)`;
@@ -998,7 +1003,8 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
     }
     case 'wa_responder': {
       if (!can(store, agent, 'whatsapp_web', 'reply')) return deny('responder no WhatsApp pessoal');
-      const prefix = conn(store, 'whatsapp_web').config?.prefix ?? '';
+      // Respondendo como o dono, não há prefixo (a mensagem é dele).
+      const prefix = waAsOwner(store) ? '' : conn(store, 'whatsapp_web').config?.prefix ?? '';
       say('Respondendo no WhatsApp');
       try {
         const r = await waweb.send(store, input.conversa, `${prefix}${String(input.text).trim()}`, input.reply_to);
@@ -1250,9 +1256,12 @@ function notifyWa(store, chat, msgs, chosen) {
   const name = waChatName(store, chat);
   const readers = store.aiAgents().filter((a) => can(store, a, 'whatsapp_web', 'read') && allowedWaChats(store, a).some((c) => c.id === chat));
   const marked = msgs.filter((x) => x.mentionsMe || x.repliesToMe);
-  const lines = msgs.slice(-6).map((x) => `${waWho(store, x)}${x.mentionsMe ? ' (marcou você)' : x.repliesToMe ? ' (respondeu você)' : ''}: "${x.text.slice(0, 300)}" [id ${x.id}]`).join('\n');
+  const lines = msgs.slice(-6).map((x) => `${waWho(store, x)}${x.mentionsMe ? ' (marcou o dono)' : x.repliesToMe ? ' (respondeu o dono)' : ''}: "${x.text.slice(0, 300)}" [id ${x.id}]`).join('\n');
+  const how = waAsOwner(store)
+    ? `Leia o histórico com wa_mensagens (no mínimo as últimas 20) para entender o assunto e o jeito do ${waOwner(store)} escrever, e continue a conversa respondendo como ele, em primeira pessoa, com wa_responder (reply_to com o id quando for resposta a uma mensagem específica). Se a resposta depender de algo que só ele sabe, pergunte a ele antes com send_message, já com a resposta que você sugere. Se não houver nada a responder (ex.: "ok", figurinha, conversa entre outras pessoas), não responda.`
+    : 'Leia mais com wa_mensagens se precisar. Responda com wa_responder (use reply_to com o id da mensagem) só se fizer sentido e couber a você; se for algo que só o dono pode decidir, avise o dono em vez de responder.';
   for (const a of readers) {
-    rt.postMessage('caixa:whatsapp_web', a.id, `${marked.length ? 'Marcaram o dono' : 'Nova mensagem'} no WhatsApp pessoal dele, ${chat.endsWith('@g.us') ? `no grupo "${name}"` : `na conversa com ${name}`}${chosen ? '' : ' (conversa não escolhida: só responda à menção)'}.\nconversa: ${chat}\n${lines}\nLeia mais com wa_mensagens se precisar. Responda com wa_responder (use reply_to com o id da mensagem) só se fizer sentido e couber a você; se for algo que só o dono pode decidir, avise o dono em vez de responder.`);
+    rt.postMessage('caixa:whatsapp_web', a.id, `${marked.length ? 'Marcaram o dono' : 'Nova mensagem'} no WhatsApp pessoal dele, ${chat.endsWith('@g.us') ? `no grupo "${name}"` : `na conversa com ${name}`}${chosen ? '' : ' (conversa não escolhida: só responda à menção)'}.\nconversa: ${chat}\n${lines}\n${how}`);
   }
 }
 
@@ -1492,7 +1501,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
     waRuntimeFor ||= runtimeFor;
     const prev = ensure(store).whatsapp_web;
     ensure(store).whatsapp_web = { connected: true, account: prev?.account || '', error: '', connectedAt: prev?.connectedAt || Date.now(),
-      config: { chats: [], mentions: 'on', mode: 'approval', prefix: '', ...(prev?.config || {}) } };
+      config: { chats: [], mentions: 'on', mode: 'approval', prefix: '', persona: 'assistant', ...(prev?.config || {}) } };
     store.save();
     try { res.json(await waweb.start(store, waHooks)); } catch (e) { bad(res, `Não foi possível iniciar o WhatsApp: ${e.message}`); }
   }));
@@ -1501,6 +1510,9 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
   });
   app.get('/api/integrations/whatsapp_web/chats', requireCompany, need('admin'), wrap(async (req, res) => {
     try { res.json(await waweb.listChats(req.company)); } catch (e) { bad(res, e.message); }
+  }));
+  app.get('/api/integrations/whatsapp_web/lookup', requireCompany, need('admin'), wrap(async (req, res) => {
+    try { res.json(await waweb.lookupPhone(req.company, req.query.phone)); } catch (e) { bad(res, e.message); }
   }));
 
   app.put('/api/integrations/:type/config', requireCompany, need('admin'), wrap(async (req, res) => {
@@ -1549,6 +1561,7 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
       if (req.body?.mentions !== undefined) c.config.mentions = req.body.mentions === 'off' ? 'off' : 'on';
       if (req.body?.mode !== undefined) c.config.mode = req.body.mode === 'auto' ? 'auto' : 'approval';
       if (req.body?.prefix !== undefined) c.config.prefix = String(req.body.prefix).slice(0, 30);
+      if (req.body?.persona !== undefined) c.config.persona = req.body.persona === 'owner' ? 'owner' : 'assistant';
     } else if (req.params.type === 'google_ads') {
       const want = str(req.body?.customerId, 20).replace(/\D/g, '');
       const list = await gads.accounts(await googleToken(store, 'google_ads'));

@@ -43,6 +43,13 @@ ok(waweb.messages(store, '888@g.us').length === 0, 'nada guardado do grupo não 
 ok(waweb.mentionChats(store).includes('999@g.us'), 'conversa com menção aparece nas menções recentes');
 const e = waweb.ingestForTest(store, me, msg(G, 'respondendo você', { from: '5511888@s.whatsapp.net', ctx: { participant: '5511999990000@s.whatsapp.net' } }));
 ok(e?.repliesToMe, 'resposta a uma mensagem sua detectada');
+// Contato escolhido pelo número recebe mensagem pelo LID: precisa cair na mesma conversa.
+const PN = '5511777776666@s.whatsapp.net';
+store.state.integrations.whatsapp_web.config.chats.push({ id: PN, name: 'Parceiro', kind: 'contact', trigger: 'mention' });
+const viaLid = { key: { remoteJid: '987654@lid', remoteJidAlt: PN, id: 'L1', fromMe: false }, pushName: 'Parceiro', messageTimestamp: Date.now() / 1000, message: { conversation: 'oi Leandro, tudo bem?' } };
+const f = waweb.ingestForTest(store, me, viaLid);
+ok(f?.chat === PN && f.chatAlt === '987654@lid', 'mensagem pelo LID guardada no número do contato');
+ok(waweb.messages(store, PN).some((x) => x.id === 'L1'), 'wa_mensagens pelo número encontra a mensagem que veio pelo LID');
 await waweb.stop(store);
 
 fs.rmSync(dir, { recursive: true, force: true });

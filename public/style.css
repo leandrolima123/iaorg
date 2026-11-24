@@ -1331,3 +1331,7 @@ dialog.modal.closing::backdrop { animation: modal-fade .14s ease-in reverse forw
 .modal-actions .btn.danger { background: var(--block); border-color: var(--block); color: var(--white); }
 @media (prefers-reduced-motion: reduce) { dialog.modal[open], dialog.modal.closing, dialog.modal[open]::backdrop { animation: none; } }
 @media (max-width: 480px) { .modal-actions .btn { flex: 1; } }
+.wa-pick input[type=search] { margin: 10px 12px 0; width: calc(100% - 24px); min-height: 36px; padding: 0 10px; border: var(--rule); border-radius: 6px; background: var(--white); }
+.wa-chosen { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; align-items: center; }
+.wa-chosen .chip button { border: 0; background: none; padding: 0 0 0 4px; font: inherit; font-size: 15px; line-height: 1; cursor: pointer; color: inherit; }
+.wa-chosen .chip.on { border-color: var(--ink); background: var(--done-soft); color: var(--ink); }
