@@ -39,7 +39,7 @@
     "openid-client": "^6.8.9",
     "pg": "^8.23.1",
     "three": "0.160.0",
-    "ws": "^8.18.0"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@netlify/blobs": "^11.1.9"
