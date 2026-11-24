@@ -50,6 +50,13 @@ const viaLid = { key: { remoteJid: '987654@lid', remoteJidAlt: PN, id: 'L1', fro
 const f = waweb.ingestForTest(store, me, viaLid);
 ok(f?.chat === PN && f.chatAlt === '987654@lid', 'mensagem pelo LID guardada no número do contato');
 ok(waweb.messages(store, PN).some((x) => x.id === 'L1'), 'wa_mensagens pelo número encontra a mensagem que veio pelo LID');
+// Leitura "desde" (resumo diário): só o que chegou depois, em ordem.
+const corte = Date.now();
+await new Promise((r) => setTimeout(r, 5));
+for (let i = 1; i <= 3; i++) waweb.ingestForTest(store, me, { ...msg(G, `novidade ${i}`, { from: '5511888@s.whatsapp.net' }), messageTimestamp: (corte + i * 1000) / 1000 });
+const novas = waweb.messages(store, G, 10, corte);
+ok(novas.length === 3 && novas[0].text === 'novidade 1', 'leitura "desde" traz só as novas, da mais antiga para a mais nova');
+ok(waweb.newSince(store, corte)[G] === 3, 'contagem de novas por conversa');
 await waweb.stop(store);
 
 fs.rmSync(dir, { recursive: true, force: true });

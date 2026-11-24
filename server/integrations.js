@@ -568,8 +568,11 @@ export function toolsFor(store, agent) {
   }
   if (can(store, agent, 'whatsapp_web', 'read')) {
     tools.push(
-      T('wa_conversas', 'Lista as conversas do WhatsApp pessoal do dono que você pode ler (grupos e contatos escolhidos, e onde marcaram o dono), com a última mensagem de cada uma.'),
-      T('wa_mensagens', 'Lê as mensagens recentes de uma conversa do WhatsApp pessoal (mais antigas primeiro). Cada mensagem tem um id para citar na resposta.', { conversa: S('id da conversa (de wa_conversas)'), limit: { type: 'number', description: 'Quantas (padrão 30)' } }, ['conversa']),
+      T('wa_conversas', 'Lista as conversas do WhatsApp pessoal do dono que você pode ler (grupos e contatos escolhidos, e onde marcaram o dono), com a última mensagem de cada uma. Com "desde", mostra quantas mensagens novas cada uma tem depois dessa hora.', { desde: S('Opcional: data e hora ISO') }),
+      T('wa_mensagens', 'Lê as mensagens de uma conversa do WhatsApp pessoal (mais antigas primeiro). Sem "desde": as últimas. Com "desde": as que chegaram depois dessa hora, em páginas (use proxima_pagina_desde para continuar). Cada mensagem tem um id para citar na resposta.', {
+        conversa: S('id da conversa (de wa_conversas)'), limit: { type: 'number', description: 'Quantas (padrão 30, até 80 por página)' },
+        desde: S('Opcional: data e hora ISO (ex.: 2026-11-24T18:00:00-03:00) para ler só o que chegou depois'),
+      }, ['conversa']),
     );
   }
   if (can(store, agent, 'whatsapp_web', 'reply')) {
@@ -991,15 +994,27 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
           ultima: m ? `${waWho(store, m)}: ${m.text.slice(0, 160)}` : '(nada guardado ainda)', quando: m ? new Date(m.ts).toISOString() : null,
           mencoes_sem_resposta: pend.map((x) => ({ id: x.id, de: waWho(store, x), texto: x.text.slice(0, 200) })) };
       });
-      return { conectado: st.status === 'open', conversas: list };
+      const since = input.desde ? Date.parse(input.desde) : 0;
+      const novas = since ? waweb.newSince(store, since) : null;
+      return { conectado: st.status === 'open', conversas: since ? list.map((x) => ({ ...x, novas_desde: novas[x.conversa] || 0 })) : list };
     }
     case 'wa_mensagens': {
       if (!can(store, agent, 'whatsapp_web', 'read')) return deny('ler o WhatsApp pessoal');
       if (!allowedWaChats(store, agent).some((c) => c.id === input.conversa)) return { error: `Conversa fora do seu acesso: ${input.conversa}. Use wa_conversas.` };
       say('Lendo o WhatsApp');
-      return { conversa: waChatName(store, input.conversa), mensagens: waweb.messages(store, input.conversa, input.limit).map((m) => ({
-        id: m.id, de: waWho(store, m), texto: m.text, quando: new Date(m.ts).toISOString(), ...(m.mentionsMe ? { marcou_o_dono: true } : {}), ...(m.repliesToMe ? { respondeu_o_dono: true } : {}),
-      })) };
+      const since = input.desde ? Date.parse(input.desde) : 0;
+      if (input.desde && !since) return { error: 'Data inválida em "desde": use ISO, ex.: 2026-11-24T18:00:00-03:00.' };
+      const n = Math.min(Math.max(+input.limit || 30, 1), 80);
+      const page = waweb.messages(store, input.conversa, since ? n + 1 : n, since);
+      const more = since && page.length > n;
+      const list = more ? page.slice(0, n) : page;
+      return {
+        conversa: waChatName(store, input.conversa),
+        mensagens: list.map((m) => ({
+          id: m.id, de: waWho(store, m), texto: m.text.slice(0, 600), quando: new Date(m.ts).toISOString(), ...(m.mentionsMe ? { marcou_o_dono: true } : {}), ...(m.repliesToMe ? { respondeu_o_dono: true } : {}),
+        })),
+        ...(more ? { proxima_pagina_desde: new Date(list[list.length - 1].ts).toISOString() } : {}),
+      };
     }
     case 'wa_responder': {
       if (!can(store, agent, 'whatsapp_web', 'reply')) return deny('responder no WhatsApp pessoal');

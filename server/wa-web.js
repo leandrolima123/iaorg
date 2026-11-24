@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
 
-const KEEP_PER_CHAT = 100;
+// Grupos movimentados passam de 100 mensagens num dia: guardamos 500 por conversa escolhida,
+// o bastante para o resumo diário (aprendizado) ler tudo o que é novo.
+const KEEP_PER_CHAT = 500;
 let lib;
 const baileys = async () => (lib ||= await import('baileys'));
 const silent = { level: 'silent', child() { return this; }, trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {} };
@@ -229,10 +231,20 @@ export async function lookupPhone(store, phone) {
 }
 
 /** Mensagens guardadas de uma conversa (mais antigas primeiro). */
-export function messages(store, chat, limit = 30) {
+export function messages(store, chat, limit = 30, since = 0) {
   const s = sessions.get(store.id);
   const data = s?.data || loadMessages(store);
-  return (data.chats[chat] || []).slice(-Math.min(Math.max(+limit || 30, 1), KEEP_PER_CHAT));
+  const n = Math.min(Math.max(+limit || 30, 1), KEEP_PER_CHAT);
+  const list = data.chats[chat] || [];
+  // Com `since`: as mais antigas a partir dessa hora (para ler em páginas, em ordem); sem: as últimas.
+  return since ? list.filter((m) => m.ts > since).slice(0, n) : list.slice(-n);
+}
+
+/** Quantas mensagens novas cada conversa guardada tem desde `since` (para o resumo diário). */
+export function newSince(store, since) {
+  const s = sessions.get(store.id);
+  const data = s?.data || loadMessages(store);
+  return Object.fromEntries(Object.entries(data.chats).map(([id, l]) => [id, l.filter((m) => m.ts > since).length]).filter(([, n]) => n));
 }
 
 /** Conversas onde você foi marcado (ou responderam você) nas últimas `hours` horas. */
