@@ -1,6 +1,6 @@
 // Minha mesa no Telegram: cada pessoa vincula o próprio Telegram e escolhe o que recebe.
 // O bot é da empresa (Integrações → Telegram); o vínculo e as preferências são de cada pessoa.
-import { $, $$, esc, api, ic, toast } from './common.js';
+import { $, $$, esc, api, ic, toast, confirmDialog } from './common.js';
 
 const st = { open: false, data: null, link: null, loading: false };
 export const telegramOpen = () => st.open;
@@ -69,7 +69,7 @@ function draw(root, ctx) {
   };
   $('[data-tg-test]', root).onclick = async () => { try { await api('POST', '/api/telegram/test'); toast('Teste enviado: confira o Telegram'); } catch (err) { toast(err.message, 'err'); } };
   $('[data-tg-unlink]', root).onclick = async () => {
-    if (!confirm('Desvincular o seu Telegram? Você para de receber a mesa por lá.')) return;
+    if (!(await confirmDialog({ title: 'Desvincular o seu Telegram?', message: 'Você para de receber a Minha mesa por lá.', confirmLabel: 'Desvincular', danger: true }))) return;
     try { st.data = await api('DELETE', '/api/telegram/me'); toast('Telegram desvinculado'); draw(root, ctx); } catch (err) { toast(err.message, 'err'); }
   };
 }

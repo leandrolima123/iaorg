@@ -1,5 +1,5 @@
 // Rotinas: tarefas e reuniões recorrentes que você configura (quem, o quê, quando) e o histórico de cada execução.
-import { $, $$, esc, api, toast, ic, initials } from './common.js';
+import { $, $$, esc, api, toast, ic, initials, confirmDialog } from './common.js';
 import { renderMarkdown } from './files-ui.js';
 
 const DOW = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -53,11 +53,11 @@ export async function renderRoutinesPanel(root, ctx) {
           <dt>Última</dt><dd>${last ? `${fmtWhen(last.startedAt, tz)} · <span class="rt-st ${RUN[last.status]?.[1] || ''}">${RUN[last.status]?.[0] || last.status}</span>` : 'nunca rodou'}</dd></dl>
         ${mine ? `<details class="rt-upd"><summary>${ic('pencil', 'sm')}Minha atualização para a próxima${r.myUpdate ? ' (enviada)' : ''}</summary>
           <textarea rows="3" placeholder="O que você fez, o que vai fazer e bloqueios">${esc(r.myUpdate?.text || '')}</textarea><button class="btn small" data-upd>Enviar</button></details>` : ''}
-        <div class="row rt-actions"><button class="btn small" data-hist>${ic('history', 'sm')}Histórico</button>
+        <div class="row rt-actions"><button class="btn small" data-hist>${ic('rotate-ccw', 'sm')}Histórico</button>
           ${ctx.isAdmin ? `<button class="btn small" data-run ${r.running ? 'disabled' : ''}>${ic('play', 'sm')}Rodar agora</button>
           <button class="btn small ghost" data-toggle>${r.enabled ? 'Pausar' : 'Ativar'}</button>
           <button class="btn small ghost" data-skip>${r.skipNext ? 'Não pular' : 'Pular a próxima'}</button>
-          <button class="btn small ghost" data-edit>${ic('pencil', 'sm')}</button><button class="btn small ghost danger" data-del>${ic('trash-2', 'sm')}</button>` : ''}</div>
+          <button class="btn small ghost" data-edit>${ic('pencil', 'sm')}</button><button class="btn small ghost danger" data-del>${ic('trash', 'sm')}</button>` : ''}</div>
       </article>`;
     }).join('') || `<div class="rt-empty">${ic('calendar-clock')}<p>Nenhuma rotina ainda.</p><p class="hint">Crie a primeira a partir de um modelo (daily, relatório de atendimento, monitoramento de infra…) ou em branco.</p></div>`}</div>`;
 
@@ -71,7 +71,9 @@ export async function renderRoutinesPanel(root, ctx) {
     $('[data-toggle]', card)?.addEventListener('click', () => act(() => api('PUT', `/api/routines/${id}`, { ...r, enabled: !r.enabled }), r.enabled ? 'Rotina pausada' : 'Rotina ativada'));
     $('[data-skip]', card)?.addEventListener('click', () => act(() => api('POST', `/api/routines/${id}/skip`)));
     $('[data-edit]', card)?.addEventListener('click', () => { st.view = 'form'; st.edit = r; renderRoutinesPanel(root, ctx); });
-    $('[data-del]', card)?.addEventListener('click', () => { if (confirm(`Remover a rotina "${r.name}"? O histórico das execuções continua guardado.`)) act(() => api('DELETE', `/api/routines/${id}`), 'Rotina removida'); });
+    $('[data-del]', card)?.addEventListener('click', async () => {
+      if (await confirmDialog({ title: `Remover a rotina "${r.name}"?`, message: 'O histórico das execuções continua guardado.', confirmLabel: 'Remover', danger: true })) act(() => api('DELETE', `/api/routines/${id}`), 'Rotina removida');
+    });
     $('[data-upd]', card)?.addEventListener('click', () => act(() => api('POST', `/api/routines/${id}/update`, { text: $('.rt-upd textarea', card).value }), 'Atualização enviada para a próxima reunião'));
   });
 }

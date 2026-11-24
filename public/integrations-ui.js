@@ -1,5 +1,5 @@
 // Catálogo de integrações + acesso por agente. Usado na aba "Integrações" e no onboarding.
-import { $, $$, esc, api, toast, ic } from './common.js';
+import { $, $$, esc, api, toast, ic, confirmDialog } from './common.js';
 
 let reposCache = null;
 // Estado da tela que sobrevive aos redesenhos: o que está aberto, o filtro e qual formulário de conexão está visível.
@@ -56,7 +56,7 @@ export async function renderIntegrations(root, ctx) {
     return `<article class="integ tile ${open ? 'expanded' : ''}" data-type="${c.type}">
       <header>${ic(c.icon)}<div><b>${esc(c.name)}</b><span class="label">${esc(c.category)}</span></div></header>
       <p class="hint integ-desc">${esc(c.description)}</p>
-      ${c.auth === 'qr' && c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
+      ${c.auth === 'qr' && c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${open || (c.auth === 'google' && !c.googleReady) ? connectForm(c) : ''}
       <div class="tile-foot">${action}${open ? `<button type="button" class="btn small ghost" data-close-connect>Cancelar</button>` : ''}</div>
     </article>`;
@@ -102,7 +102,7 @@ export async function renderIntegrations(root, ctx) {
     return `<details class="integ on" data-type="${c.type}" ${open}>${summary(c, conn)}
       <div class="integ-body">
       <p class="hint">${esc(c.description)}</p>
-      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
+      ${c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${conn.error ? `<p class="error">${esc(conn.error)}</p>` : ''}
       ${configBlock(c, conn)}
       <div class="access">
@@ -134,7 +134,7 @@ export async function renderIntegrations(root, ctx) {
       ? c.tokenParts.map((p) => `<label class="field"><span>${esc(p.label)}</span><input name="tp_${p.key}" type="${p.secret ? 'password' : 'text'}" autocomplete="${p.secret ? 'new-password' : 'off'}" data-1p-ignore data-lpignore="true" spellcheck="false" required></label>`).join('')
       : `<label class="field"><span>${esc(c.tokenLabel)}</span><input name="token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" placeholder="${esc(c.tokenPlaceholder)}" required></label>`;
     return `<form class="integ-form" data-connect autocomplete="off">
-      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
+      ${c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${tokenInputs}
       ${(c.configFields || []).map((f) => c.type === 'binance' && f.key === 'pairs'
         ? pairPicker('', 'testnet')
@@ -344,7 +344,7 @@ export async function renderIntegrations(root, ctx) {
   }));
   $$('[data-desk-halt]', root).forEach((b) => b.addEventListener('click', async () => {
     const halt = b.dataset.deskHalt === '1';
-    if (!halt && !confirm('Liberar a mesa? Os agentes voltam a poder comprar dentro dos limites.')) return;
+    if (!halt && !(await confirmDialog({ title: 'Liberar a mesa?', message: 'Os agentes voltam a poder comprar, dentro dos limites da empresa.', confirmLabel: 'Liberar a mesa', icon: 'play' }))) return;
     try { await api('POST', '/api/integrations/binance/halt', { halted: halt }); await after(halt ? 'Mesa parada: nenhuma compra nova' : 'Mesa liberada'); } catch (err) { toast(err.message, 'err'); }
   }));
   $$('[data-desk-status]', root).forEach(async (box) => {
@@ -455,7 +455,7 @@ export async function renderIntegrations(root, ctx) {
 
   // ---------- WhatsApp pessoal (QR code) ----------
   $$('[data-wa-start]', root).forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Conectar o seu WhatsApp pessoal? Esta conexão não usa a API oficial e o WhatsApp pode bloquear o número. Prefira um número secundário.')) return;
+    if (!(await confirmDialog({ title: 'Conectar o seu WhatsApp pessoal?', message: 'Esta conexão não usa a API oficial e o WhatsApp pode bloquear o número. Prefira um número secundário.', confirmLabel: 'Entendi, gerar QR code', icon: 'shield-exclamation-point' }))) return;
     b.disabled = true;
     try { await api('POST', '/api/integrations/whatsapp_web/start'); ui.open.add('whatsapp_web'); await after('Abra o WhatsApp no celular e leia o QR code'); }
     catch (err) { toast(err.message, 'err'); b.disabled = false; }
@@ -546,7 +546,8 @@ export async function renderIntegrations(root, ctx) {
 
   $$('[data-disconnect]', root).forEach((b) => b.addEventListener('click', async () => {
     const type = b.closest('[data-type]').dataset.type;
-    if (!confirm('Desconectar esta integração? Os agentes perdem o acesso na hora.')) return;
+    const name = data.catalog.find((x) => x.type === type)?.name || 'esta integração';
+    if (!(await confirmDialog({ title: `Desconectar ${name}?`, message: 'Os agentes perdem o acesso na hora, e as permissões dadas a eles são apagadas.', confirmLabel: 'Desconectar', danger: true }))) return;
     try { await api('DELETE', `/api/integrations/${type}`); reposCache = null; ui.open.delete(type); await after('Integração desconectada'); } catch (err) { toast(err.message, 'err'); }
   }));
   } // bind

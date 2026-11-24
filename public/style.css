@@ -1310,3 +1310,24 @@ details.integ[open] .integ-chev .i { transform: rotate(180deg); }
 .wa-qr img { background: #fff; padding: 8px; border-radius: 8px; border: 1px solid var(--line, #ddd); }
 .wa-qr ol { margin: 0; padding-left: 18px; max-width: 34ch; }
 .repo-list label.repo select { margin-left: auto; font-size: .82rem; }
+
+/* Modal de confirmação e de texto (common.js: confirmDialog / promptDialog) */
+dialog.modal { padding: 0; border: var(--rule); border-radius: 10px; background: var(--paper); color: var(--ink); width: min(440px, calc(100vw - 32px)); box-shadow: 0 24px 60px -20px rgba(28, 29, 28, .55); }
+dialog.modal::backdrop { background: rgba(28, 29, 28, .45); }
+dialog.modal[open] { animation: modal-in .18s var(--ease-out); }
+dialog.modal[open]::backdrop { animation: modal-fade .18s var(--ease-out); }
+dialog.modal.closing { animation: modal-out .14s ease-in forwards; }
+dialog.modal.closing::backdrop { animation: modal-fade .14s ease-in reverse forwards; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+@keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes modal-fade { from { opacity: 0; } }
+.modal-box { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.modal-head { display: flex; align-items: center; gap: 10px; }
+.modal-head .i { width: 22px; height: 22px; color: var(--ink-soft); }
+.modal-head .i.danger { color: var(--block); }
+.modal-head h2 { margin: 0; font: 700 22px/1.1 var(--font-sign); letter-spacing: .01em; }
+.modal-msg { margin: 0; color: var(--ink-soft); line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.modal-actions .btn.danger { background: var(--block); border-color: var(--block); color: var(--white); }
+@media (prefers-reduced-motion: reduce) { dialog.modal[open], dialog.modal.closing, dialog.modal[open]::backdrop { animation: none; } }
+@media (max-width: 480px) { .modal-actions .btn { flex: 1; } }
