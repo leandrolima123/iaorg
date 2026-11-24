@@ -99,6 +99,7 @@ export async function renderIntegrations(root, ctx) {
     return `<details class="integ on" data-type="${c.type}" ${open}>${summary(c, conn)}
       <div class="integ-body">
       <p class="hint">${esc(c.description)}</p>
+      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${conn.error ? `<p class="error">${esc(conn.error)}</p>` : ''}
       ${configBlock(c, conn)}
       <div class="access">
@@ -130,6 +131,7 @@ export async function renderIntegrations(root, ctx) {
       ? c.tokenParts.map((p) => `<label class="field"><span>${esc(p.label)}</span><input name="tp_${p.key}" type="${p.secret ? 'password' : 'text'}" autocomplete="${p.secret ? 'new-password' : 'off'}" data-1p-ignore data-lpignore="true" spellcheck="false" required></label>`).join('')
       : `<label class="field"><span>${esc(c.tokenLabel)}</span><input name="token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" placeholder="${esc(c.tokenPlaceholder)}" required></label>`;
     return `<form class="integ-form" data-connect autocomplete="off">
+      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${tokenInputs}
       ${(c.configFields || []).map((f) => c.type === 'binance' && f.key === 'pairs'
         ? pairPicker('', 'testnet')

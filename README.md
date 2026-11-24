@@ -69,7 +69,7 @@ flowchart LR
   RUN -- "cria e vigia" --> JOB
   JOB -- "ferramentas MCP<br/>(token por trabalho)" --> RUN -- "callback" --> APP
 
-  APP -- "chaves cifradas<br/>ficam aqui" --> EXT["Claude API · GitHub · Resend · Gmail · Crisp<br/>Kapso · Railway · Upload-Post · OpenAI · Gemini<br/>Google Ads · Drive · Telegram · Binance"]
+  APP -- "chaves cifradas<br/>ficam aqui" --> EXT["Claude API · GitHub · Resend · Gmail · Crisp<br/>Kapso · Railway · PostgreSQL · Upload-Post · OpenAI · Gemini<br/>Google Ads · Drive · Telegram · Binance"]
 ```
 
 - **app (`iaorg`):** a interface, a API, o motor dos agentes (`server/engine.js`), as integrações, o servidor MCP e o armazenamento de cada empresa em `data/companies/<id>/`.
@@ -395,6 +395,7 @@ Na aba **Integrações**, a empresa conecta cada sistema **uma vez** e escolhe *
 | **Google Ads** | OAuth Google (`adwords`) | ver relatórios · ajustar (com aprovação) | `ads_report`, `ads_query`, `ads_campaign_status`, `ads_set_budget`, `ads_add_negative` |
 | **Crisp** | token `identificador:chave` + Website ID | ler · responder e anotar · resolver | conversas do chat do site |
 | **WhatsApp (Kapso)** | API key do projeto | ler · responder | `whatsapp_recent`, `whatsapp_messages`, `whatsapp_reply` |
+| **PostgreSQL** | URL de conexão de um usuário **só de leitura**, alcançado pela VPN ou rede local | consultar (somente leitura) | `db_schema`, `db_query` |
 | **Railway** | token de projeto, conta ou workspace | ver deploys e logs · redeploy e restart · variáveis (por projeto) | deploys, logs, restart, variáveis mascaradas |
 | **Redes sociais (Upload-Post)** | API key + perfil | ver posts e métricas · publicar e agendar · responder comentários | `social_contas`, `social_metricas`, `social_posts`, `social_metricas_post`, `social_comentarios`, `social_historico`, `social_publicar`, `social_responder` |
 | **Imagens com IA (OpenAI)** | API key | criar e editar imagens | `imagem_gerar` |
@@ -446,6 +447,18 @@ Na aprovação, você vê a prévia (destinatário, texto e imagens), pode **edi
 - **Referências:** até algumas imagens, como o logo ou a foto do produto, para editar ou compor a nova imagem.
 - **Destino:** as imagens vão para `Marketing/Imagens/AAAA-MM-DD-assunto.jpg`, ou para o `caminho` pedido.
 - **Custo:** cobrado na sua conta da OpenAI ou do Google AI Studio. O Gemini exige faturamento ativo.
+
+**PostgreSQL (somente leitura):**
+- **Use uma credencial só de leitura** e acesse o banco **pela VPN ou pela rede local**. Nunca exponha o banco na internet para isso.
+- Usuário de leitura (PostgreSQL 14+): `CREATE ROLE iaorg_leitor LOGIN PASSWORD '…'; GRANT CONNECT ON DATABASE banco TO iaorg_leitor; GRANT pg_read_all_data TO iaorg_leitor;`. Em versões antigas, use `GRANT USAGE ON SCHEMA` e `GRANT SELECT ON ALL TABLES IN SCHEMA`.
+- **Rede:** com a VPN ligada na máquina que roda o Docker, use o IP interno do banco na URL. Para um banco na própria máquina, use `host.docker.internal`.
+- **Na conexão**, o IAORG recusa superusuário e usuário com permissão de gravar em qualquer tabela.
+- **Em cada consulta**, mesmo assim:
+  - ela roda numa transação `READ ONLY`, desfeita no fim;
+  - só um comando por vez;
+  - só `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, `TABLE` e `VALUES`;
+  - no máximo 200 linhas e 15 segundos.
+- **Teste:** `PG_ADMIN_URL=postgresql://… node scripts/test-postgres.mjs`, só em banco descartável.
 
 **Railway:** valores de variáveis chegam ao agente mascarados. Redeploy, restart e alteração de variável exigem um motivo.
 

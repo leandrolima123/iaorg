@@ -17,6 +17,7 @@ import * as bn from './binance.js';
 import * as telegram from './telegram.js';
 import * as uploadpost from './uploadpost.js';
 import * as imagegen from './imagegen.js';
+import * as pgdb from './postgres.js';
 import { mimeOf, recordWrite } from './files.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -77,6 +78,19 @@ export const CATALOG = [
     perms: [{ id: 'read', label: 'Ver deploys e logs' }, { id: 'deploy', label: 'Redeploy e restart' }, { id: 'vars', label: 'Ler e alterar variáveis' }],
     resource: { key: 'projects', label: 'Projetos' },
     suggest: ['devops', 'cto', 'fullstack', 'backend'],
+  },
+  {
+    type: 'postgres', name: 'PostgreSQL', category: 'Dados', icon: 'database', auth: 'token', status: 'available',
+    description: 'O agente consulta o banco PostgreSQL da empresa para responder perguntas e montar relatórios: vê as tabelas e roda consultas de leitura (SELECT). O IAORG nunca grava no banco: cada consulta roda numa transação somente leitura, com até 200 linhas e 15 segundos.',
+    notice: 'Importante: conecte com uma credencial SÓ DE LEITURA e acesse o banco pela VPN ou pela rede local. Nunca exponha o banco na internet para isso. O IAORG recusa superusuário e usuários com permissão de gravar em alguma tabela.',
+    tokenLabel: 'URL de conexão do PostgreSQL', tokenPlaceholder: 'postgresql://iaorg_leitor:senha@10.8.0.5:5432/banco',
+    tokenHelp: 'Crie um usuário só de leitura no banco: CREATE ROLE iaorg_leitor LOGIN PASSWORD \'…\'; GRANT CONNECT ON DATABASE banco TO iaorg_leitor; GRANT pg_read_all_data TO iaorg_leitor; (PostgreSQL 14 ou mais novo; nos antigos, GRANT USAGE ON SCHEMA public e GRANT SELECT ON ALL TABLES IN SCHEMA public). Com a VPN ligada na máquina que roda o IAORG, use o IP interno do banco; para um banco na própria máquina, use host.docker.internal.',
+    configFields: [
+      { key: 'ssl', label: 'SSL', options: [{ value: 'off', label: 'Sem SSL (rede local ou VPN)' }, { value: 'require', label: 'SSL obrigatório' }, { value: 'verify', label: 'SSL com verificação do certificado' }] },
+      { key: 'schemas', label: 'Schemas que os agentes veem (opcional, separe por vírgula)', placeholder: 'Vazio = todos que o usuário enxerga' },
+    ],
+    perms: [{ id: 'read', label: 'Consultar (somente leitura)' }],
+    suggest: ['dados', 'cto', 'backend', 'fullstack', 'ceo', 'financeiro'],
   },
   {
     type: 'crisp', name: 'Crisp', category: 'Atendimento', icon: 'messages-square', auth: 'token', status: 'available',
@@ -403,6 +417,7 @@ export function accessSummary(store, agent) {
     if (c.type === 'gmail' || c.type === 'google_calendar') where = ` da conta ${conn(store, c.type).account}`;
     if (c.type === 'railway') where = ` nos projetos ${allowedProjects(store, agent).map((p) => `${p.name} (id ${p.id})`).join(', ') || '(nenhum)'}`;
     if (c.type === 'crisp') where = ` no chat do site ${conn(store, 'crisp').account || ''}`;
+    if (c.type === 'postgres') where = ` no banco ${conn(store, 'postgres').account || ''} (somente leitura: db_schema para ver as tabelas, db_query para consultar; prefira agregações e não exponha dados pessoais sem necessidade)`;
     if (c.type === 'whatsapp') where = ` no número ${conn(store, 'whatsapp').account || ''} (texto livre só até 24 h após a última mensagem do cliente)`;
     if (c.type === 'google_ads') { const cfg = conn(store, 'google_ads').config || {}; where = cfg.customerId ? ` na conta ${cfg.name || cfg.customerId} (moeda ${cfg.currency || '?'}); mudanças vão para aprovação de uma pessoa` : ' (nenhuma conta escolhida ainda)'; }
     if (c.type === 'binance') where = desk.accessLine(desk.deskConfig(conn(store, 'binance').config));
@@ -515,6 +530,15 @@ export function toolsFor(store, agent) {
   }
   if (can(store, agent, 'whatsapp', 'reply')) {
     tools.push(T('whatsapp_reply', 'Responde o cliente no WhatsApp (texto). Só funciona até 24 h depois da última mensagem do cliente; fora disso, escale.', { telefone: S('Telefone do cliente (com DDI)'), text: S('Mensagem para o cliente: curta, sem markdown pesado') }, ['telefone', 'text']));
+  }
+  if (can(store, agent, 'postgres', 'read')) {
+    tools.push(
+      T('db_schema', 'Mostra a estrutura do banco PostgreSQL da empresa: sem table, lista as tabelas e views (com estimativa de linhas); com table, as colunas e os tipos. Use antes de escrever consultas.', { table: S('Opcional: tabela, ex.: public.pedidos') }),
+      T('db_query', 'Roda uma consulta SOMENTE LEITURA (SELECT, WITH, EXPLAIN, SHOW) no PostgreSQL da empresa: um comando por vez, até 200 linhas e 15 s. Prefira agregações (count, sum, group by) a puxar linhas cruas.', {
+        sql: S('Consulta SQL de leitura'),
+        limit: { type: 'number', description: 'Máximo de linhas (padrão 100, até 200)' },
+      }, ['sql']),
+    );
   }
   if (can(store, agent, 'google_ads', 'read')) {
     tools.push(
@@ -894,6 +918,18 @@ export async function executeIntegrationTool(rt, agent, name, input, taskHint, o
       return { ok: true };
     }
     // ---------- WhatsApp (Kapso) ----------
+    case 'db_schema':
+    case 'db_query': {
+      if (!can(store, agent, 'postgres', 'read')) return deny('consultar o banco de dados');
+      const c = conn(store, 'postgres');
+      const url = decrypt(c.secret);
+      const schemas = String(c.config?.schemas || '').split(/[,;\s]+/).filter(Boolean);
+      try {
+        if (name === 'db_schema') { say('Lendo a estrutura do banco'); return await pgdb.schema(url, c.config?.ssl, { schemas, table: input.table }); }
+        say('Consultando o banco de dados');
+        return await pgdb.query(url, c.config?.ssl, input.sql, input.limit);
+      } catch (e) { return { error: `PostgreSQL: ${e.message}` }; }
+    }
     case 'whatsapp_recent': {
       if (!can(store, agent, 'whatsapp', 'read')) return deny('ler o WhatsApp');
       const w = waCtx(store);
@@ -1272,6 +1308,15 @@ export function mountIntegrations(app, { requireCompany, need, wrap, runtimeFor,
         config.tier = config.tier === 'plugin' ? 'plugin' : 'website';
         const w = await crisp.verify(crisp.parseToken(secret), config.tier, config.websiteId);
         account = [w.name, w.domain].filter(Boolean).join(' · ');
+      }
+      if (def.type === 'postgres') {
+        const d = pgdb.describe(secret);
+        config.ssl = ['require', 'verify'].includes(config.ssl) ? config.ssl : 'off';
+        const v = await pgdb.verify(secret, config.ssl);
+        if (v.superuser) return bad(res, `O usuário ${v.user} é superusuário. Crie um usuário só de leitura (veja as instruções abaixo do campo) e conecte com ele.`);
+        if (v.writable.length) return bad(res, `O usuário ${v.user} pode gravar em ${v.writable.join(', ')}${v.writable.length === 5 ? ' e outras' : ''}. Use uma credencial só de leitura.`);
+        config.allSchemas = v.schemas.slice(0, 50);
+        account = `${d.user}@${d.host}:${d.port}/${v.database} · PostgreSQL ${v.version}`;
       }
       if (def.type === 'whatsapp') {
         const v = await kapso.verify(secret, config.phoneNumberId || undefined);
