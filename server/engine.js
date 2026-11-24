@@ -185,7 +185,7 @@ export class CompanyRuntime {
   isHuman(id) { return this.store.getAgent(id)?.kind === 'human'; }
   nameOf(id) {
     if (id === 'board') return this.store.owner()?.name || 'Dono';
-    if (String(id).startsWith('caixa:')) return { 'caixa:gmail': 'Caixa do Gmail', 'caixa:crisp': 'Chat do site', 'caixa:whatsapp': 'WhatsApp' }[id] || 'Caixa de entrada';
+    if (String(id).startsWith('caixa:')) return { 'caixa:gmail': 'Caixa do Gmail', 'caixa:crisp': 'Chat do site', 'caixa:whatsapp': 'WhatsApp', 'caixa:whatsapp_web': 'WhatsApp pessoal' }[id] || 'Caixa de entrada';
     return this.store.getAgent(id)?.name || id;
   }
   ownerId() { return this.store.owner()?.id || 'board'; }
