@@ -50,15 +50,27 @@ function locate(jobId) {
 const sessionFile = (store, taskId) => path.join(store.dir, 'sessions', `${String(taskId).replace(/[^\w-]/g, '')}.tgz`);
 
 // Kit de trabalho a partir dos acessos e da ficha (mesmo motor para todos; muda o que o agente tem à mão).
-export function kitsFor(store, agent) {
+// Agente com mais de um repositório (ex.: fullstack): a tarefa escolhe o repositório quando cita o nome dele
+// (ex.: "rapidpay-app"); um ajuste continua no repositório do trabalho anterior; senão, o padrão da ficha.
+function repoForTask(repos, fallback, task, prevRepo) {
+  if (prevRepo && repos.includes(prevRepo)) return prevRepo;
+  const text = `${task?.title || ''} ${task?.description || ''}`.toLowerCase();
+  const hits = repos.filter((r) => new RegExp(`(^|[^\\w-])${r.split('/').pop().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`).test(text));
+  return hits.length === 1 ? hits[0] : fallback;
+}
+
+export function kitsFor(store, agent, task = null, prevRepo = null) {
   const w = profileOf(agent).workshop;
   const kits = { research: !!w.research, browser: !!w.browser, code: null, shell: false };
   if (can(store, agent, 'github', 'code')) {
     const repos = allowedRepos(store, agent);
-    const repo = w.code.repo && repos.includes(w.code.repo) ? w.code.repo : repos[0];
+    const fallback = w.code.repo && repos.includes(w.code.repo) ? w.code.repo : repos[0];
+    const repo = repos.length > 1 && task ? repoForTask(repos, fallback, task, prevRepo) : fallback;
     if (repo) {
       const meta = (store.state.integrations?.github?.config?.repos || []).find((r) => r.fullName === repo);
-      kits.code = { repo, base: w.code.baseBranch || meta?.defaultBranch || 'main', setup: w.code.setup, test: w.code.test, lint: w.code.lint, postgres: w.code.postgres, redis: w.code.redis, autoMerge: w.code.autoMerge, ciWaitMin: w.code.ciWaitMin };
+      // Comandos por repositório (ficha → oficina) têm prioridade sobre os gerais.
+      const per = w.code.perRepo?.[repo] || {};
+      kits.code = { repo, base: per.baseBranch || w.code.baseBranch || meta?.defaultBranch || 'main', setup: per.setup ?? w.code.setup, test: per.test ?? w.code.test, lint: per.lint ?? w.code.lint, postgres: per.postgres ?? w.code.postgres, redis: per.redis ?? w.code.redis, autoMerge: w.code.autoMerge, ciWaitMin: w.code.ciWaitMin };
     }
   }
   if (kits.browser) kits.shell = true; // navegador costuma precisar de terminal (servir o app, scripts)
@@ -103,8 +115,8 @@ export async function startJob(rt, agent, task, { test = false } = {}) {
   if (test) task.test = true;
   const profile = profileOf(agent);
   const w = profile.workshop;
-  const kits = kitsFor(store, agent);
   const prev = jobsOf(store).filter((j) => j.taskId === task.id).at(-1);
+  const kits = kitsFor(store, agent, task, prev?.code?.repo);
   const adjust = task.adjust || '';
   const job = {
     id: uid('job'), agentId: agent.id, taskId: task.id, status: 'starting', phase: 'preparando', phaseText: PHASE_LABEL.preparando,
