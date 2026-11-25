@@ -101,6 +101,10 @@ export function sanitizeProfile(body, prev, { validPeople, validCollections }) {
       code: {
         repo: s(c.repo, 140), baseBranch: s(c.baseBranch, 100).replace(/[^\w./-]/g, ''), setup: s(c.setup, 1000), test: s(c.test, 1000), lint: s(c.lint, 1000),
         postgres: !!c.postgres, redis: !!c.redis, autoMerge: c.autoMerge !== false, ciWaitMin: Math.round(num(c.ciWaitMin, 0, 120, d.code.ciWaitMin)),
+        // Comandos por repositório (agente com mais de um repo). A tela ainda não edita: mantém o que já havia.
+        perRepo: c.perRepo && typeof c.perRepo === 'object'
+          ? Object.fromEntries(Object.entries(c.perRepo).slice(0, 10).map(([r, v]) => [s(r, 140), { setup: s(v?.setup, 1000), test: s(v?.test, 1000), lint: s(v?.lint, 1000), postgres: !!v?.postgres, redis: !!v?.redis }]))
+          : prev.workshop?.code?.perRepo || undefined,
       },
     };
   }
