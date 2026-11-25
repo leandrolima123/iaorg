@@ -64,9 +64,15 @@ export async function start(store, hooks) {
   sessions.set(store.id, s);
 
   const sock = B.makeWASocket({
-    auth: state, logger: silent, version, browser: B.Browsers.ubuntu('IAORG'),
-    // Sincronização inicial só para a agenda (nomes dos contatos e das conversas); o conteúdo antigo das mensagens é descartado.
-    markOnlineOnConnect: false, syncFullHistory: false, shouldSyncHistoryMessage: () => true,
+    // Nome que aparece no celular em "Aparelhos conectados".
+    auth: state, logger: silent, version, browser: ['IAORG', 'Chrome', '1.0'],
+    // Só a sincronização inicial (agenda e nomes) e a de nomes; nada de histórico recente/completo,
+    // que faz o celular ficar "sincronizando" e enche a pasta da sessão.
+    markOnlineOnConnect: false, syncFullHistory: false, fireInitQueries: false,
+    shouldSyncHistoryMessage: (n) => {
+      const T = B.proto.HistorySync.HistorySyncType;
+      return [T.INITIAL_BOOTSTRAP, T.PUSH_NAME].includes(n?.syncType);
+    },
     generateHighQualityLinkPreview: false, getMessage: async () => undefined,
   });
   s.sock = sock;
@@ -79,7 +85,7 @@ export async function start(store, hooks) {
     }
     if (u.connection === 'open') {
       const me = sock.user || {};
-      s.status = 'open'; s.qr = null; s.error = '';
+      s.status = 'open'; s.qr = null; s.error = ''; s.retries = 0;
       s.me = { id: bare(me.id), lid: bare(me.lid), name: me.name || me.notify || '', phone: bare(me.id).split('@')[0] };
       hooks.onStatus?.(store, status(store));
     }
@@ -97,8 +103,13 @@ export async function start(store, hooks) {
         hooks.onStatus?.(store, status(store));
         return;
       }
+      // Reconecta esperando cada vez mais (5 s, 15 s, 45 s… até 10 min): queda passageira volta sozinha,
+      // e um problema persistente não vira um laço de reconexões (cada uma "sincroniza" no celular).
       s.status = 'connecting';
-      setTimeout(() => { if (!s.stopped) { s.status = 'reconnecting'; start(store, hooks).catch(() => {}); } }, code === B.DisconnectReason.restartRequired ? 500 : 5000);
+      s.retries = (s.retries || 0) + 1;
+      const wait = code === B.DisconnectReason.restartRequired ? 500 : Math.min(600000, 5000 * 3 ** Math.min(s.retries - 1, 5));
+      console.warn(`[whatsapp] ${store.id.slice(0, 8)}: conexão caiu (código ${code ?? '?'}), nova tentativa em ${Math.round(wait / 1000)} s`);
+      setTimeout(() => { if (!s.stopped) { s.status = 'reconnecting'; start(store, hooks).catch(() => {}); } }, wait);
     }
   });
   // Agenda: só nome e número, para você escolher quais contatos liberar.
