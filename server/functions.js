@@ -24,7 +24,7 @@ export const FUNCTION_CATALOG = {
     requires: [{ type: 'binance', label: 'Binance' }],
     look: { char: 'skeleton_rogue', parts: {}, outfit: 'agent', item: '', scale: 0.95 }, // funções: esqueletos, para diferenciar dos agentes
     fields: (store) => [
-      { key: 'intervalMin', label: 'Varrer a cada', type: 'select', options: [{ value: 5, label: '5 min' }, { value: 15, label: '15 min' }, { value: 30, label: '30 min' }, { value: 60, label: '1 h' }], hint: 'Cada varredura usa só dados públicos da Binance: não custa IA.' },
+      { key: 'intervalMin', label: 'Varrer a cada', type: 'select', options: [{ value: 1, label: '1 min' }, { value: 2, label: '2 min' }, { value: 5, label: '5 min' }, { value: 15, label: '15 min' }, { value: 30, label: '30 min' }, { value: 60, label: '1 h' }], hint: 'Cada varredura usa só dados públicos da Binance: não custa IA.' },
       { key: 'analystId', label: 'Quem chamar', type: 'select', options: [{ value: '', label: 'O primeiro analista com permissão de propor' }, ...agentOptions(store, { integration: 'binance', perm: 'analyze' })], hint: 'Só aparecem agentes com a permissão "Propor operações" na Binance.' },
       { key: 'minRR', label: 'Ganho/risco mínimo para chamar', type: 'number', min: 1, max: 5, step: 0.1, hint: 'Já descontadas as taxas. O analista usa 2 nos procedimentos dele.' },
       { key: 'cooldownH', label: 'Espera para avisar o mesmo par de novo (horas)', type: 'number', min: 1, max: 24, step: 1 },
@@ -57,11 +57,16 @@ function view(store, m) {
 }
 
 /** Chamado pelo agendador do motor: roda cada função ativa quando chega a vez dela. */
+// Função ainda rodando não começa de novo (com intervalo de 1 min, uma varredura lenta poderia se sobrepor à próxima).
+const running = new Set();
 export async function tickFunctions(rt) {
   for (const m of rt.store.state.agents) {
     if (!isFunction(m) || m.active === false || m.fn?.enabled === false) continue;
     const def = defOf(m);
-    if (def) await def.run(rt, m).catch((e) => console.error(`[função ${m.id}]`, e.message));
+    const key = `${rt.store.id}:${m.id}`;
+    if (!def || running.has(key)) continue;
+    running.add(key);
+    try { await def.run(rt, m); } catch (e) { console.error(`[função ${m.id}]`, e.message); } finally { running.delete(key); }
   }
 }
 

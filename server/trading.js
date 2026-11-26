@@ -285,7 +285,7 @@ export function watchConfig(cfg = {}) {
   const n = (v, lo, hi, def) => { const x = Number(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : def; };
   const D = WATCH_DEFAULTS;
   return {
-    intervalMin: [5, 15, 30, 60].includes(+cfg.intervalMin) ? +cfg.intervalMin : D.intervalMin,
+    intervalMin: [1, 2, 5, 15, 30, 60].includes(+cfg.intervalMin) ? +cfg.intervalMin : D.intervalMin,
     cooldownH: Math.round(n(cfg.cooldownH, 1, 24, D.cooldownH)),
     minRR: +n(cfg.minRR, 1, 5, D.minRR).toFixed(1),
     maxLossPct: Math.round(n(cfg.maxLossPct, 10, 100, D.maxLossPct)),
