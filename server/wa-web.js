@@ -11,6 +11,7 @@ import QRCode from 'qrcode';
 // Grupos movimentados passam de 100 mensagens num dia: guardamos 500 por conversa escolhida,
 // o bastante para o resumo diário (aprendizado) ler tudo o que é novo.
 const KEEP_PER_CHAT = 500;
+const CTX_PER_CHAT = 30; // contexto em memória de conversas não escolhidas
 let lib;
 const baileys = async () => (lib ||= await import('baileys'));
 const silent = { level: 'silent', child() { return this; }, trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {} };
@@ -161,16 +162,43 @@ function record(store, s, m) {
   };
   // Lista de conversas recentes (só nome e quando; sem conteúdo) para você escolher quais liberar.
   if (!rec.fromMe || !s.data.recent[chat]) s.data.recent[chat] = { name: rec.group ? s.data.recent[chat]?.name || '' : (rec.fromMe ? s.data.recent[chat]?.name : rec.name) || '', alt: rec.chatAlt, ts: rec.ts, group: rec.group };
+  if (rec.group && !s.data.recent[chat].name) groupName(store, s, chat);
+  // Contexto curto de TODAS as conversas, só na memória (nunca vai para o disco, some ao reiniciar):
+  // quando alguém marca você num grupo não escolhido, o agente vê o que veio antes da menção.
+  const ring = (s.ctx ||= new Map());
+  const buf = ring.get(chat) || [];
+  buf.push(rec);
+  if (buf.length > CTX_PER_CHAT) buf.shift();
+  ring.set(chat, buf);
+  if (ring.size > 300) ring.delete(ring.keys().next().value);
   const cfg = store.state.integrations?.whatsapp_web?.config || {};
   const chosen = (cfg.chats || []).some((c) => c.id === chat || (rec.chatAlt && c.id === rec.chatAlt));
   if (!chosen && !(cfg.mentions !== 'off' && (rec.mentionsMe || rec.repliesToMe))) { persist(store, s); return null; }
   const list = (s.data.chats[chat] ||= []);
+  // Menção num grupo não escolhido: guarda junto as mensagens anteriores que ainda estão na memória.
+  if (!chosen) for (const x of buf.slice(0, -1)) if (!list.some((y) => y.id === x.id)) list.push(x);
+  list.sort((a, b) => a.ts - b.ts);
   if (!list.some((x) => x.id === rec.id)) list.push(rec);
   if (list.length > KEEP_PER_CHAT) list.splice(0, list.length - KEEP_PER_CHAT);
   s.raw.set(`${chat}|${rec.id}`, { key: m.key, message: m.message });
   if (s.raw.size > 2000) s.raw.delete(s.raw.keys().next().value);
   persist(store, s);
   return rec;
+}
+
+// Nome do grupo (assunto), buscado uma vez e guardado na lista de conversas recentes.
+function groupName(store, s, chat) {
+  if (!s.sock?.groupMetadata || (s.nameAsked ||= new Set()).has(chat)) return;
+  s.nameAsked.add(chat);
+  s.sock.groupMetadata(chat).then((g) => { if (g?.subject && s.data.recent[chat]) { s.data.recent[chat].name = g.subject; persist(store, s); } }).catch(() => {});
+}
+/** Nome conhecido de uma conversa (grupo ou contato), para avisos e listas. */
+export function chatName(store, chat) {
+  const s = sessions.get(store.id);
+  const data = s?.data || loadMessages(store);
+  const r = data.recent?.[chat];
+  const c = data.contacts?.[chat];
+  return r?.name || c?.name || c?.notify || '';
 }
 
 /** Só para os testes: processa uma mensagem como se tivesse chegado, com `me` = { id, lid }. */

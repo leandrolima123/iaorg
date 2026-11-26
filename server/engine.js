@@ -658,7 +658,12 @@ ${org}
       const past = this.s.messages.filter((m) => m.ts < firstNew && ((m.from === other && m.to === agent.id) || (m.from === agent.id && m.to === other))).slice(-16);
       if (!past.length) continue;
       lines.push(`## Conversa recente com ${who(other)} (mais antigas primeiro)`);
-      for (const m of past) lines.push(`- [${when(m.ts)}] ${m.from === agent.id ? 'você' : this.nameOf(m.from)}: ${cut(m.content, 900)}`);
+      // As últimas mensagens vão inteiras: é nelas que está a proposta a que uma resposta curta ("ok", "responda") se refere.
+      past.forEach((m, i) => lines.push(`- [${when(m.ts)}] ${m.from === agent.id ? 'você' : this.nameOf(m.from)}: ${cut(m.content, i >= past.length - 3 ? 4000 : 900)}`));
+      const lastMine = [...past].reverse().find((m) => m.from === agent.id);
+      if (this.isHuman(other) && lastMine) {
+        lines.push(`(Se a nova mensagem de ${this.nameOf(other)} for curta — "ok", "sim", "pode", "manda", "responda", "isso" —, ela responde à SUA ÚLTIMA mensagem acima, de ${when(lastMine.ts)}: faça o que você propôs nela. Só pergunte de novo se ela não tinha uma proposta clara.)`);
+      }
       lines.push('');
     }
     lines.push(newMessages.length ? '## Novas mensagens (responda a estas, usando o contexto acima)' : '## Novas mensagens\n(nenhuma)');

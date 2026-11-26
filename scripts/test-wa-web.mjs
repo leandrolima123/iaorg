@@ -57,6 +57,13 @@ for (let i = 1; i <= 3; i++) waweb.ingestForTest(store, me, { ...msg(G, `novidad
 const novas = waweb.messages(store, G, 10, corte);
 ok(novas.length === 3 && novas[0].text === 'novidade 1', 'leitura "desde" traz só as novas, da mais antiga para a mais nova');
 ok(waweb.newSince(store, corte)[G] === 3, 'contagem de novas por conversa');
+// Menção num grupo NÃO escolhido: o agente recebe o que veio antes (contexto em memória).
+const G2 = '120363999999999999@g.us';
+for (const t of ['o portal da Núclea pede certificado', 'quem tem o certificado A1?']) waweb.ingestForTest(store, me, msg(G2, t, { from: '5511555@s.whatsapp.net' }));
+ok(waweb.messages(store, G2).length === 0, 'grupo não escolhido: nada guardado antes da menção');
+waweb.ingestForTest(store, me, msg(G2, '@Leandro consegue ver?', { from: '5511555@s.whatsapp.net', ctx: { mentionedJid: [me.id] } }));
+const g2 = waweb.messages(store, G2);
+ok(g2.length === 3 && g2[0].text.startsWith('o portal'), 'na menção, as mensagens anteriores entram como contexto');
 await waweb.stop(store);
 
 fs.rmSync(dir, { recursive: true, force: true });

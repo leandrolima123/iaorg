@@ -267,6 +267,8 @@ function allowedWaChats(store, agent) {
 function waChatName(store, id) {
   const c = (conn(store, 'whatsapp_web')?.config?.chats || []).find((x) => x.id === id);
   if (c) return c.name;
+  const known = waweb.chatName(store, id);
+  if (known) return known;
   const last = waweb.messages(store, id, 50).filter((m) => !m.fromMe && !m.group).pop();
   return last?.name || (id.endsWith('@g.us') ? 'grupo' : `+${id.split('@')[0]}`);
 }
@@ -449,7 +451,7 @@ export function accessSummary(store, agent) {
       const cfg = conn(store, 'whatsapp_web').config || {};
       const chats = allowedWaChats(store, agent).filter((x) => !x.viaMention).map((x) => x.name);
       where = ` no WhatsApp pessoal do dono (${conn(store, 'whatsapp_web').account || 'número conectado'}), nas conversas: ${chats.join(', ') || '(nenhuma escolhida)'}${cfg.mentions === 'off' ? '' : ', e onde alguém marcar o dono'}. As mensagens saem do número do dono. ${waAsOwner(store)
-        ? `Escreva COMO ELE, em primeira pessoa, no estilo das mensagens dele na conversa (tamanho, tom, gírias, emojis); não diga que é assistente nem IA. Antes de responder, leia o histórico (wa_mensagens) e continue a conversa de onde parou. Se a resposta depender de algo que só ele sabe (compromisso, valor, prazo, opinião), pergunte a ele antes (send_message) com sua sugestão de resposta`
+        ? `Escreva COMO ELE, em primeira pessoa, no estilo das mensagens dele na conversa (tamanho, tom, gírias, emojis); não diga que é assistente nem IA. Antes de responder, leia o histórico (wa_mensagens) e continue a conversa de onde parou. Mande a resposta direto com wa_responder${cfg.mode === 'auto' ? '' : ' (o rascunho vai para a aprovação dele, que corrige ou recusa: não pergunte antes pelo chat)'}; só pergunte a ele por send_message se faltar um fato que você não consegue deduzir nem consultar`
         : 'Escreva como assistente dele, curto e educado; nunca fale por ele sobre compromissos, dinheiro ou opiniões sem ele ter dito'}${cfg.mode === 'auto' ? '' : '; cada resposta vai para aprovação dele antes de sair'}`;
     }
     if (c.type === 'postgres') where = ` no banco ${conn(store, 'postgres').account || ''} (somente leitura: db_schema para ver as tabelas, db_query para consultar; prefira agregações e não exponha dados pessoais sem necessidade)`;
@@ -1271,12 +1273,18 @@ function notifyWa(store, chat, msgs, chosen) {
   const name = waChatName(store, chat);
   const readers = store.aiAgents().filter((a) => can(store, a, 'whatsapp_web', 'read') && allowedWaChats(store, a).some((c) => c.id === chat));
   const marked = msgs.filter((x) => x.mentionsMe || x.repliesToMe);
-  const lines = msgs.slice(-6).map((x) => `${waWho(store, x)}${x.mentionsMe ? ' (marcou o dono)' : x.repliesToMe ? ' (respondeu o dono)' : ''}: "${x.text.slice(0, 300)}" [id ${x.id}]`).join('\n');
+  const fmt = (x) => `${waWho(store, x)}${x.mentionsMe ? ' (marcou o dono)' : x.repliesToMe ? ' (respondeu o dono)' : ''}: "${x.text.slice(0, 300)}" [id ${x.id}]`;
+  const lines = msgs.slice(-6).map(fmt).join('\n');
+  // O que veio antes (para o agente não receber a menção solta, sem assunto).
+  const ids = new Set(msgs.map((x) => x.id));
+  const before = waweb.messages(store, chat, 40).filter((x) => !ids.has(x.id) && x.ts <= msgs[0].ts).slice(-8);
+  const ctxLines = before.length ? `Antes disso na conversa:\n${before.map(fmt).join('\n')}\nAgora:\n` : '';
+  const approval = conn(store, 'whatsapp_web')?.config?.mode !== 'auto';
   const how = waAsOwner(store)
-    ? `Leia o histórico com wa_mensagens (no mínimo as últimas 20) para entender o assunto e o jeito do ${waOwner(store)} escrever, e continue a conversa respondendo como ele, em primeira pessoa, com wa_responder (reply_to com o id quando for resposta a uma mensagem específica). Se a resposta depender de algo que só ele sabe, pergunte a ele antes com send_message, já com a resposta que você sugere. Se não houver nada a responder (ex.: "ok", figurinha, conversa entre outras pessoas), não responda.`
+    ? `Se precisar de mais contexto, leia com wa_mensagens. Se houver algo a responder, escreva a resposta como o ${waOwner(store)}, em primeira pessoa, e mande com wa_responder (reply_to com o id).${approval ? ` Ela vai para a aprovação dele, que corrige ou recusa: NÃO pergunte antes pelo chat — o rascunho já é a pergunta.` : ''} Só use send_message ao ${waOwner(store)} se faltar um FATO que você não consegue deduzir nem consultar (aí, UMA pergunta objetiva). Não avise o ${waOwner(store)} de mensagens que não pedem nada (risada, "ok", figurinha, agradecimento, conversa entre outras pessoas): apenas ignore.`
     : 'Leia mais com wa_mensagens se precisar. Responda com wa_responder (use reply_to com o id da mensagem) só se fizer sentido e couber a você; se for algo que só o dono pode decidir, avise o dono em vez de responder.';
   for (const a of readers) {
-    rt.postMessage('caixa:whatsapp_web', a.id, `${marked.length ? 'Marcaram o dono' : 'Nova mensagem'} no WhatsApp pessoal dele, ${chat.endsWith('@g.us') ? `no grupo "${name}"` : `na conversa com ${name}`}${chosen ? '' : ' (conversa não escolhida: só responda à menção)'}.\nconversa: ${chat}\n${lines}\n${how}`);
+    rt.postMessage('caixa:whatsapp_web', a.id, `${marked.length ? 'Marcaram o dono' : 'Nova mensagem'} no WhatsApp pessoal dele, ${chat.endsWith('@g.us') ? `no grupo "${name}"` : `na conversa com ${name}`}${chosen ? '' : ' (conversa não escolhida: só responda à menção)'}.\nconversa: ${chat}\n${ctxLines}${lines}\n${how}`);
   }
 }
 
@@ -1333,7 +1341,9 @@ async function pollGmail(store, runtimeFor) {
   const c = conn(store, 'gmail');
   const readers = c && store.aiAgents().filter((a) => can(store, a, 'gmail', 'read'));
   if (!readers?.length) return;
-  const list = await google.gmailSearch(await googleToken(store, 'gmail'), 'in:inbox is:unread newer_than:2d', 15);
+  // Só o que é conversa: promoções, redes sociais, atualizações automáticas e fóruns não acordam o agente.
+  const list = (await google.gmailSearch(await googleToken(store, 'gmail'), 'in:inbox is:unread newer_than:2d -category:promotions -category:social -category:updates -category:forums', 15))
+    .filter((m) => !/(^|[\s<._-])(news|newsletter|marketing|dmarc|mailer-daemon|postmaster)[^@]*@|@news\.|noreply-dmarc/i.test(m.from || ''));
   const seen = new Set(c.seen || []);
   const first = !c.seen;
   c.seen = list.map((m) => m.id).concat([...seen]).slice(0, 300);
