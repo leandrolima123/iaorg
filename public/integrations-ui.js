@@ -1,5 +1,5 @@
 // Catálogo de integrações + acesso por agente. Usado na aba "Integrações" e no onboarding.
-import { $, $$, esc, api, toast, ic } from './common.js';
+import { $, $$, esc, api, toast, ic, confirmDialog } from './common.js';
 
 let reposCache = null;
 // Estado da tela que sobrevive aos redesenhos: o que está aberto, o filtro e qual formulário de conexão está visível.
@@ -24,7 +24,7 @@ export async function renderIntegrations(root, ctx) {
   const withAccess = new Set(data.connected.flatMap((c) => (c.agents || []).filter((a) => a.perms?.length).map((a) => a.id)));
   // Conectada mas ainda falta escolher o que liberar (repositórios, projetos, conta de anúncios).
   const pending = (c, conn) => (c.type === 'github' && !(conn.config.repos || []).length) || (c.type === 'railway' && !(conn.config.projects || []).length)
-    || (c.type === 'google_ads' && !conn.config?.customerId) || (c.type === 'resend' && !(conn.config.inboxes || []).length)
+    || (c.type === 'google_ads' && !conn.config?.customerId) || (c.type === 'whatsapp_web' && (!conn.account || !(conn.config.chats || []).length)) || (c.type === 'resend' && !(conn.config.inboxes || []).length)
     || (c.type === 'binance' && ['pairs', 'maxOrderUsdt', 'maxRiskUsdt', 'maxDailyLossUsdt', 'maxPositions'].some((k) => !String(conn.config?.[k] ?? '').trim()));
 
   function draw() {
@@ -51,10 +51,12 @@ export async function renderIntegrations(root, ctx) {
     const open = ui.connecting === c.type;
     const action = !isOwner ? '<p class="hint">Só o dono da empresa conecta integrações.</p>'
       : c.auth === 'google' && c.googleReady ? `<a class="btn small primary" href="/integrations/google/start?type=${c.type}">${ic('plug', 'sm')}Conectar conta Google</a>`
+      : c.auth === 'qr' ? `<button type="button" class="btn small primary" data-wa-start>${ic('qr-code', 'sm')}Conectar com QR code</button>`
       : open ? '' : `<button type="button" class="btn small primary" data-open-connect>${ic('plug', 'sm')}Conectar</button>`;
     return `<article class="integ tile ${open ? 'expanded' : ''}" data-type="${c.type}">
       <header>${ic(c.icon)}<div><b>${esc(c.name)}</b><span class="label">${esc(c.category)}</span></div></header>
       <p class="hint integ-desc">${esc(c.description)}</p>
+      ${c.auth === 'qr' && c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${open || (c.auth === 'google' && !c.googleReady) ? connectForm(c) : ''}
       <div class="tile-foot">${action}${open ? `<button type="button" class="btn small ghost" data-close-connect>Cancelar</button>` : ''}</div>
     </article>`;
@@ -95,11 +97,12 @@ export async function renderIntegrations(root, ctx) {
     });
     const resList = c.type === 'github' ? (conn.config.repos || []).map((r) => r.fullName)
       : c.type === 'resend' ? (conn.config.inboxes || [])
-      : c.type === 'railway' ? (conn.config.projects || []).map((p) => p.name) : [];
+      : c.type === 'railway' ? (conn.config.projects || []).map((p) => p.name)
+      : c.type === 'whatsapp_web' ? (conn.config.chats || []).map((x) => x.name) : [];
     return `<details class="integ on" data-type="${c.type}" ${open}>${summary(c, conn)}
       <div class="integ-body">
       <p class="hint">${esc(c.description)}</p>
-      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
+      ${c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${conn.error ? `<p class="error">${esc(conn.error)}</p>` : ''}
       ${configBlock(c, conn)}
       <div class="access">
@@ -131,7 +134,7 @@ export async function renderIntegrations(root, ctx) {
       ? c.tokenParts.map((p) => `<label class="field"><span>${esc(p.label)}</span><input name="tp_${p.key}" type="${p.secret ? 'password' : 'text'}" autocomplete="${p.secret ? 'new-password' : 'off'}" data-1p-ignore data-lpignore="true" spellcheck="false" required></label>`).join('')
       : `<label class="field"><span>${esc(c.tokenLabel)}</span><input name="token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" placeholder="${esc(c.tokenPlaceholder)}" required></label>`;
     return `<form class="integ-form" data-connect autocomplete="off">
-      ${c.notice ? `<p class="integ-notice">${ic('shield-alert', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
+      ${c.notice ? `<p class="integ-notice">${ic('shield-exclamation-point', 'sm')}<span>${esc(c.notice)}</span></p>` : ''}
       ${tokenInputs}
       ${(c.configFields || []).map((f) => c.type === 'binance' && f.key === 'pairs'
         ? pairPicker('', 'testnet')
@@ -226,6 +229,24 @@ export async function renderIntegrations(root, ctx) {
         <label class="field"><span>Número que os agentes atendem</span><select name="phoneNumberId" ${isAdmin ? '' : 'disabled'}>${nums.map((n) => `<option value="${esc(n.id)}" ${n.id === conn.config.phoneNumberId ? 'selected' : ''}>${esc(n.display || n.id)}${n.name ? ` · ${esc(n.name)}` : ''}</option>`).join('')}</select></label>
         <p class="hint">O agente é avisado de cada mensagem nova de cliente (verificação a cada minuto). Texto livre só até 24 h depois da última mensagem do cliente; depois disso ele escala para você.</p>
         ${isAdmin && nums.length > 1 ? '<div><button class="btn small">Salvar número</button></div>' : ''}</form>`;
+    }
+    if (c.type === 'whatsapp_web') {
+      const cfg = conn.config || {};
+      const chats = cfg.chats || [];
+      const sel = (name, opts, val) => `<select name="${name}" ${isAdmin ? '' : 'disabled'}>${opts.map(([v, l]) => `<option value="${v}" ${val === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+      return `<div class="integ-config">
+        <div class="wa-status" data-waweb-status><p class="hint">Verificando a conexão…</p></div>
+        <h4>Conversas liberadas</h4>
+        <p class="hint">${chats.length ? chats.map((x) => `<b>${esc(x.name)}</b> <small>(${x.kind === 'group' ? (x.trigger === 'all' ? 'grupo · todas as mensagens' : 'grupo · só quando marcam você') : 'contato'})</small>`).join(', ') : 'Nenhuma ainda. Escolha os grupos e contatos que os agentes podem ler e responder.'}</p>
+        ${isAdmin ? `<button type="button" class="btn small" data-pick-wa>${ic('list-checks', 'sm')}Escolher grupos e contatos</button><div class="repo-list hidden" data-wa-list></div>` : ''}
+        <form class="integ-form" data-generic-config>
+          <label class="field"><span>Quando marcam você em outros grupos</span>${sel('mentions', [['on', 'Avisar os agentes (eles podem responder só àquela menção)'], ['off', 'Ignorar']], cfg.mentions || 'on')}</label>
+          <label class="field"><span>Como os agentes escrevem</span>${sel('persona', [['owner', 'Como eu, em primeira pessoa (continuam a conversa no meu estilo)'], ['assistant', 'Como meu assistente']], cfg.persona || 'assistant')}</label>
+          <label class="field"><span>Respostas dos agentes</span>${sel('mode', [['approval', 'Cada resposta passa pela minha aprovação'], ['auto', 'Automáticas (saem direto do meu número)']], cfg.mode || 'approval')}</label>
+          <label class="field"><span>Prefixo nas mensagens dos agentes (opcional, só no modo assistente)</span><input name="prefix" value="${esc(cfg.prefix || '')}" placeholder="Ex.: 🤖 Assistente: " autocomplete="off" ${isAdmin ? '' : 'disabled'}></label>
+          <p class="hint">O IAORG só guarda mensagens das conversas escolhidas e das menções a você, não marca nada como lido e não aparece online.</p>
+          ${isAdmin ? '<div><button class="btn small">Salvar</button></div>' : ''}
+        </form></div>`;
     }
     if (c.type === 'google_ads') {
       const cfg = conn.config || {};
@@ -324,7 +345,7 @@ export async function renderIntegrations(root, ctx) {
   }));
   $$('[data-desk-halt]', root).forEach((b) => b.addEventListener('click', async () => {
     const halt = b.dataset.deskHalt === '1';
-    if (!halt && !confirm('Liberar a mesa? Os agentes voltam a poder comprar dentro dos limites.')) return;
+    if (!halt && !(await confirmDialog({ title: 'Liberar a mesa?', message: 'Os agentes voltam a poder comprar, dentro dos limites da empresa.', confirmLabel: 'Liberar a mesa', icon: 'play' }))) return;
     try { await api('POST', '/api/integrations/binance/halt', { halted: halt }); await after(halt ? 'Mesa parada: nenhuma compra nova' : 'Mesa liberada'); } catch (err) { toast(err.message, 'err'); }
   }));
   $$('[data-desk-status]', root).forEach(async (box) => {
@@ -433,6 +454,99 @@ export async function renderIntegrations(root, ctx) {
     } catch (err) { box.innerHTML = `<p class="error" style="padding:12px">${esc(err.message)}</p>`; }
   }));
 
+  // ---------- WhatsApp pessoal (QR code) ----------
+  $$('[data-wa-start]', root).forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Conectar o seu WhatsApp pessoal?', message: 'Esta conexão não usa a API oficial e o WhatsApp pode bloquear o número. Prefira um número secundário.', confirmLabel: 'Entendi, gerar QR code', icon: 'shield-exclamation-point' }))) return;
+    b.disabled = true;
+    try { await api('POST', '/api/integrations/whatsapp_web/start'); ui.open.add('whatsapp_web'); await after('Abra o WhatsApp no celular e leia o QR code'); }
+    catch (err) { toast(err.message, 'err'); b.disabled = false; }
+  }));
+  $$('[data-waweb-status]', root).forEach((box) => {
+    let wasOpen = !!connected.whatsapp_web?.account;
+    const paint = async () => {
+      if (!document.body.contains(box)) return;
+      let s;
+      try { s = await api('GET', '/api/integrations/whatsapp_web/status'); } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
+      if (s.status === 'open') {
+        box.innerHTML = `<p class="hint">${ic('check', 'sm')} Conectado como <b>${esc(s.me?.name || '')}</b> (+${esc(s.me?.phone || '')}). No celular aparece em <b>Aparelhos conectados</b> como "IAORG".</p>`;
+        if (!wasOpen) { wasOpen = true; await after('WhatsApp conectado'); }
+        return;
+      }
+      box.innerHTML = s.status === 'qr' && s.qr
+        ? `<div class="wa-qr"><img src="${s.qr}" alt="QR code para conectar o WhatsApp" width="220" height="220">
+            <ol class="hint"><li>No celular, abra o WhatsApp.</li><li>Toque em <b>Configurações → Aparelhos conectados → Conectar aparelho</b>.</li><li>Aponte a câmera para este código. Ele muda a cada poucos segundos.</li></ol></div>`
+        : ['logged_out', 'error', 'stopped'].includes(s.status)
+        ? `<p class="error">${esc(s.error || 'O WhatsApp está desconectado.')}</p>${isOwner ? `<button type="button" class="btn small primary" data-wa-restart>${ic('qr-code', 'sm')}Gerar novo QR code</button>` : ''}`
+        : '<p class="hint">Conectando ao WhatsApp…</p>';
+      const r = $('[data-wa-restart]', box);
+      if (r) r.onclick = async () => { r.disabled = true; try { await api('POST', '/api/integrations/whatsapp_web/start'); paint(); } catch (err) { toast(err.message, 'err'); r.disabled = false; } };
+      if (!['logged_out', 'error', 'stopped'].includes(s.status)) setTimeout(paint, 3000);
+    };
+    paint();
+  });
+  $$('[data-pick-wa]', root).forEach((b) => b.addEventListener('click', async () => {
+    const box = $('[data-wa-list]', b.closest('.integ-config'));
+    box.classList.remove('hidden');
+    box.innerHTML = '<p class="hint" style="padding:12px">Carregando grupos e conversas…</p>';
+    try {
+      const { groups, contacts } = await api('GET', '/api/integrations/whatsapp_web/chats');
+      // Escolhidos ficam num mapa: a busca filtra a lista sem perder o que já foi marcado.
+      const sel = new Map((connected.whatsapp_web?.config.chats || []).map((x) => [x.id, { ...x }]));
+      const all = [...groups, ...contacts];
+      const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const sub = (x) => (x.kind === 'group' ? `grupo · ${x.size} participantes` : x.phone ? `+${x.phone}` : 'contato');
+      const row = (x) => `<label class="repo"><input type="checkbox" value="${esc(x.id)}" ${sel.has(x.id) ? 'checked' : ''}>
+        <b>${esc(x.name)}</b><span class="hint">${esc(sub(x))}</span>
+        ${x.kind === 'group' ? `<select data-trigger aria-label="Quando avisar os agentes em ${esc(x.name)}"><option value="mention">Só quando me marcam</option><option value="all" ${sel.get(x.id)?.trigger === 'all' ? 'selected' : ''}>Todas as mensagens</option></select>` : ''}</label>`;
+      box.innerHTML = `<div class="wa-pick">
+          <input type="search" data-wa-q placeholder="Buscar grupo, contato ou número (ex.: 5511999998888)" aria-label="Buscar grupo ou contato" autocomplete="off">
+          <div class="wa-chosen" data-wa-chosen></div>
+          <div data-wa-rows></div>
+          <div class="row" style="padding:10px 12px;gap:8px"><button type="button" class="btn small primary" data-save-wa>Salvar conversas</button><span class="hint" data-wa-count></span></div>
+        </div>`;
+      const q = $('[data-wa-q]', box);
+      const paintChosen = () => {
+        $('[data-wa-chosen]', box).innerHTML = sel.size
+          ? [...sel.values()].map((x) => `<span class="chip on">${esc(x.name)}<button type="button" data-unwa="${esc(x.id)}" aria-label="Remover ${esc(x.name)}">×</button></span>`).join('')
+          : '<span class="hint">Nada escolhido ainda.</span>';
+        $('[data-wa-count]', box).textContent = `${sel.size} escolhida(s)`;
+        $$('[data-unwa]', box).forEach((b2) => b2.onclick = () => { sel.delete(b2.dataset.unwa); paintChosen(); paintRows(); });
+      };
+      const paintRows = () => {
+        const t = norm(q.value.trim());
+        const digits = q.value.replace(/\D/g, '');
+        const hit = (x) => !t || norm(x.name).includes(t) || (digits.length >= 4 && String(x.phone || '').includes(digits));
+        const g = groups.filter(hit).slice(0, 60);
+        const c = contacts.filter(hit).slice(0, 80);
+        const byPhone = digits.length >= 10 && !contacts.some((x) => x.phone === digits);
+        $('[data-wa-rows]', box).innerHTML = `
+          <p class="hint" style="padding:10px 12px 0">Grupos (${g.length}${t ? ` de ${groups.length}` : ''})</p>${g.map(row).join('') || '<p class="hint" style="padding:6px 12px">Nenhum grupo.</p>'}
+          <p class="hint" style="padding:10px 12px 0">Contatos (${c.length}${c.length === 80 ? '+' : ''}${t ? ` de ${contacts.length}` : ''}): agenda e conversas recentes</p>${c.map(row).join('') || '<p class="hint" style="padding:6px 12px">Nenhum contato com esse nome.</p>'}
+          ${byPhone ? `<div style="padding:6px 12px"><button type="button" class="btn small" data-wa-add="${esc(digits)}">${ic('plus', 'sm')}Adicionar o número +${esc(digits)}</button></div>` : ''}
+          ${!t ? '<p class="hint" style="padding:6px 12px">Não achou alguém? Busque pelo nome ou digite o número com DDI e DDD.</p>' : ''}`;
+        $$('[data-wa-rows] input[type=checkbox]', box).forEach((i) => i.onchange = () => {
+          const x = all.find((y) => y.id === i.value);
+          if (i.checked) sel.set(x.id, { id: x.id, name: x.name, kind: x.kind, trigger: $('[data-trigger]', i.closest('label'))?.value || 'mention' });
+          else sel.delete(x.id);
+          paintChosen();
+        });
+        $$('[data-wa-rows] [data-trigger]', box).forEach((s) => s.onchange = () => { const id = $('input', s.closest('label')).value; if (sel.has(id)) sel.get(id).trigger = s.value; });
+        const add = $('[data-wa-add]', box);
+        if (add) add.onclick = async () => {
+          add.disabled = true;
+          try { const x = await api('GET', `/api/integrations/whatsapp_web/lookup?phone=${encodeURIComponent(add.dataset.waAdd)}`); contacts.unshift(x); all.push(x); sel.set(x.id, { ...x, trigger: 'mention' }); q.value = ''; paintChosen(); paintRows(); toast(`${x.name} adicionado`); }
+          catch (err) { toast(err.message, 'err'); add.disabled = false; }
+        };
+      };
+      q.oninput = paintRows;
+      paintChosen(); paintRows(); q.focus();
+      $('[data-save-wa]', box).onclick = async () => {
+        const chats = [...sel.values()].map(({ id, name, trigger }) => ({ id, name, trigger: trigger || 'mention' }));
+        try { await api('PUT', '/api/integrations/whatsapp_web/config', { chats }); await after(`${chats.length} conversa(s) liberada(s)`); } catch (err) { toast(err.message, 'err'); }
+      };
+    } catch (err) { box.innerHTML = `<p class="error" style="padding:12px">${esc(err.message)}</p>`; }
+  }));
+
   $$('[data-pick-projects]', root).forEach((b) => b.addEventListener('click', async () => {
     const box = $('[data-project-list]', b.parentElement);
     box.classList.remove('hidden');
@@ -476,14 +590,15 @@ export async function renderIntegrations(root, ctx) {
 
   $$('[data-disconnect]', root).forEach((b) => b.addEventListener('click', async () => {
     const type = b.closest('[data-type]').dataset.type;
-    if (!confirm('Desconectar esta integração? Os agentes perdem o acesso na hora.')) return;
+    const name = data.catalog.find((x) => x.type === type)?.name || 'esta integração';
+    if (!(await confirmDialog({ title: `Desconectar ${name}?`, message: 'Os agentes perdem o acesso na hora, e as permissões dadas a eles são apagadas.', confirmLabel: 'Desconectar', danger: true }))) return;
     try { await api('DELETE', `/api/integrations/${type}`); reposCache = null; ui.open.delete(type); await after('Integração desconectada'); } catch (err) { toast(err.message, 'err'); }
   }));
   } // bind
 }
 
 // Resumo de acessos de um agente (para o editor da equipe).
-export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', railway: 'Railway', crisp: 'Crisp', binance: 'Binance', telegram: 'Telegram', uploadpost: 'Redes sociais', openai_images: 'Imagens (OpenAI)', gemini_images: 'Imagens (Gemini)' };
+export const INTEGRATION_NAMES = { github: 'GitHub', resend: 'Resend', gmail: 'Gmail', google_calendar: 'Google Agenda', google_drive: 'Google Drive', google_ads: 'Google Ads', whatsapp: 'WhatsApp', whatsapp_web: 'WhatsApp pessoal', postgres: 'PostgreSQL', railway: 'Railway', crisp: 'Crisp', binance: 'Binance', telegram: 'Telegram', uploadpost: 'Redes sociais', openai_images: 'Imagens (OpenAI)', gemini_images: 'Imagens (Gemini)' };
 export function accessChips(agent, integrations, catalogNames = INTEGRATION_NAMES) {
   const list = Object.entries(agent.access || {}).filter(([t]) => integrations?.some((i) => i.type === t));
   return list.length ? list.map(([t, a]) => `<span class="badge">${esc(catalogNames[t] || t)} · ${a.perms.length} permiss${a.perms.length > 1 ? 'ões' : 'ão'}</span>`).join(' ') : '<span class="hint">Nenhum acesso a sistemas externos.</span>';

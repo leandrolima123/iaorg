@@ -1,5 +1,5 @@
 // Ficha do agente (abas), base de conhecimento da empresa e fila de aprovações.
-import { $, $$, esc, api, toast, ic } from './common.js';
+import { $, $$, esc, api, toast, ic, confirmDialog } from './common.js';
 
 const TABS = [
   ['instructions', 'Instruções'], ['procedures', 'Procedimentos'], ['examples', 'Exemplos'], ['knowledge', 'Conhecimento'],
@@ -243,7 +243,7 @@ export async function renderProfile(root, ctx) {
         try { await api('PUT', `/api/agents/${ctx.agentId}/memory`, { text: $('[data-mem]', body).value }); toast('Memória salva'); views.memory(); } catch (e) { toast(e.message, 'err'); }
       });
       $$('[data-memrestore]', body).forEach((b) => b.addEventListener('click', async () => {
-        if (!confirm('Restaurar esta versão da memória? A atual fica guardada.')) return;
+        if (!(await confirmDialog({ title: 'Restaurar esta versão da memória?', message: 'A versão atual fica guardada no histórico.', confirmLabel: 'Restaurar', icon: 'rotate-ccw' }))) return;
         await api('PUT', `/api/agents/${ctx.agentId}/memory`, { restore: +b.dataset.memrestore }); toast('Memória restaurada'); views.memory();
       }));
     },
@@ -251,7 +251,7 @@ export async function renderProfile(root, ctx) {
       body.innerHTML = `<p class="hint">Cada vez que a ficha é salva, a versão anterior fica guardada (até 15).</p>
         <ul class="people" style="margin-top:8px">${data.history.map((h) => `<li>${ic('clock', 'sm')}<span>${when(h.ts)} · por ${esc(h.by || '—')}</span>${ctx.canEdit ? `<button type="button" class="btn small" data-restore="${h.index}">Restaurar esta versão</button>` : ''}</li>`).join('') || '<li class="hint">Nenhuma versão anterior ainda.</li>'}</ul>`;
       $$('[data-restore]', body).forEach((b) => b.addEventListener('click', async () => {
-        if (!confirm('Restaurar esta versão? A atual também fica guardada no histórico.')) return;
+        if (!(await confirmDialog({ title: 'Restaurar esta versão da ficha?', message: 'A versão atual também fica guardada no histórico.', confirmLabel: 'Restaurar', icon: 'rotate-ccw' }))) return;
         await api('POST', `/api/agents/${ctx.agentId}/profile/restore`, { index: +b.dataset.restore });
         draftFor = null; toast('Versão restaurada'); renderProfile(root, ctx);
       }));
@@ -284,7 +284,7 @@ export async function renderCompanyMemory(root, ctx) {
     try { await api('PUT', '/api/company-memory', { text: $('[data-cmem]', root).value }); toast('Memória da empresa salva'); renderCompanyMemory(root, ctx); } catch (e) { toast(e.message, 'err'); }
   });
   $$('[data-cmemrestore]', root).forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Restaurar esta versão? A atual fica guardada.')) return;
+    if (!(await confirmDialog({ title: 'Restaurar esta versão da memória da empresa?', message: 'A versão atual fica guardada no histórico.', confirmLabel: 'Restaurar', icon: 'rotate-ccw' }))) return;
     await api('PUT', '/api/company-memory', { restore: +b.dataset.cmemrestore }); toast('Versão restaurada'); renderCompanyMemory(root, ctx);
   }));
 }
@@ -317,7 +317,7 @@ export async function renderKnowledge(root, ctx) {
     catch (err) { toast(err.message, 'err'); }
   }));
   $$('[data-del]', root).forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Remover esta coleção? Os agentes deixam de usá-la.')) return;
+    if (!(await confirmDialog({ title: 'Remover esta coleção?', message: 'Os agentes deixam de usá-la na hora.', confirmLabel: 'Remover', danger: true }))) return;
     await api('DELETE', `/api/knowledge/${b.dataset.del}`); toast('Coleção removida'); renderKnowledge(root, ctx);
   }));
   $$('[data-see]', root).forEach((b) => b.addEventListener('click', async () => {

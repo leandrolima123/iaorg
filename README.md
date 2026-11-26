@@ -395,6 +395,7 @@ Na aba **Integrações**, a empresa conecta cada sistema **uma vez** e escolhe *
 | **Google Ads** | OAuth Google (`adwords`) | ver relatórios · ajustar (com aprovação) | `ads_report`, `ads_query`, `ads_campaign_status`, `ads_set_budget`, `ads_add_negative` |
 | **Crisp** | token `identificador:chave` + Website ID | ler · responder e anotar · resolver | conversas do chat do site |
 | **WhatsApp (Kapso)** | API key do projeto | ler · responder | `whatsapp_recent`, `whatsapp_messages`, `whatsapp_reply` |
+| **WhatsApp pessoal (QR code)** | QR code lido no celular (aparelho conectado), **não oficial** | ler conversas escolhidas · responder | `wa_conversas`, `wa_mensagens`, `wa_responder` |
 | **PostgreSQL** | URL de conexão de um usuário **só de leitura**, alcançado pela VPN ou rede local | consultar (somente leitura) | `db_schema`, `db_query` |
 | **Railway** | token de projeto, conta ou workspace | ver deploys e logs · redeploy e restart · variáveis (por projeto) | deploys, logs, restart, variáveis mascaradas |
 | **Redes sociais (Upload-Post)** | API key + perfil | ver posts e métricas · publicar e agendar · responder comentários | `social_contas`, `social_metricas`, `social_posts`, `social_metricas_post`, `social_comentarios`, `social_historico`, `social_publicar`, `social_responder` |
@@ -409,6 +410,7 @@ Na aba **Integrações**, a empresa conecta cada sistema **uma vez** e escolhe *
 | Ação | Padrão | Pode ser automática? |
 |---|---|---|
 | E-mail (Resend/Gmail), chat (Crisp), WhatsApp | rascunho em **Aprovações** | sim, por canal, na ficha do agente |
+| Resposta no WhatsApp pessoal | rascunho em **Aprovações** | sim, se a integração estiver em "Automáticas" **e** a ficha do agente permitir envio direto no WhatsApp |
 | Post e resposta nas redes (Upload-Post) | aprovação | sim, no modo "Automática" da integração |
 | Mudança no Google Ads | aprovação, sempre | não |
 | Redeploy, restart e variável no Railway | direto, com motivo obrigatório no diário | — |
@@ -447,6 +449,18 @@ Na aprovação, você vê a prévia (destinatário, texto e imagens), pode **edi
 - **Referências:** até algumas imagens, como o logo ou a foto do produto, para editar ou compor a nova imagem.
 - **Destino:** as imagens vão para `Marketing/Imagens/AAAA-MM-DD-assunto.jpg`, ou para o `caminho` pedido.
 - **Custo:** cobrado na sua conta da OpenAI ou do Google AI Studio. O Gemini exige faturamento ativo.
+
+**WhatsApp pessoal (QR code):**
+- **Atenção:** usa o protocolo do WhatsApp Web (biblioteca Baileys), não a API oficial. O WhatsApp não permite automação em contas pessoais e pode bloquear o número. Prefira um número secundário.
+- **Conectar:** em Integrações, clique em **Conectar com QR code** e leia o código no celular, em Aparelhos conectados.
+- **O que os agentes enxergam:** em **Escolher grupos e contatos**, você libera as conversas.
+  - Nos grupos, o agente é avisado só quando marcam você, ou de todas as mensagens, se você escolher.
+  - Nos contatos, de toda mensagem.
+  - Com "Quando marcam você em outros grupos" ligado, o agente também pode responder àquela menção.
+- **O que fica guardado:** o IAORG só guarda as mensagens dessas conversas e das menções. Ele não marca nada como lido e não aparece online.
+- **Respostas:** saem do seu número. Por padrão, cada uma vai para **Aprovações**. Dá para definir um prefixo, por exemplo `🤖 Assistente:`.
+- **Sessão:** fica em `data/companies/<id>/whatsapp-web`. Ao desconectar, o IAORG sai do aparelho conectado e apaga a sessão e as mensagens guardadas.
+- **Teste sem celular:** `node scripts/test-wa-web.mjs`.
 
 **PostgreSQL (somente leitura):**
 - **Use uma credencial só de leitura** e acesse o banco **pela VPN ou pela rede local**. Nunca exponha o banco na internet para isso.

@@ -1,7 +1,7 @@
 // Gerenciador de arquivos da empresa: árvore de pastas, lista, prévia (imagem, PDF, vídeo, áudio,
 // Markdown, CSV, JSON, texto), enviar (inclusive arrastando), mover/renomear, nova pasta, excluir
 // e o estado do espelho no Google Drive.
-import { $, $$, esc, api, toast, ic } from './common.js';
+import { $, $$, esc, api, toast, ic, confirmDialog, promptDialog } from './common.js';
 
 const st = { folder: '', sel: null, q: '', open: new Set(['']) };
 const KIND = (mime = '', p = '') => {
@@ -165,7 +165,7 @@ export async function renderFilesPanel(root, ctx) {
 
   // nova pasta / enviar
   $('[data-newfolder]', root).onclick = async () => {
-    const name = prompt(`Nome da nova pasta${st.folder ? ` dentro de ${st.folder}` : ''}:`);
+    const name = await promptDialog({ title: 'Nova pasta', message: st.folder ? `Dentro de ${st.folder}` : '', label: 'Nome da pasta', placeholder: 'Ex.: Contratos', confirmLabel: 'Criar pasta', icon: 'folder-plus' });
     if (!name?.trim()) return;
     try { const r = await api('POST', '/api/files/folder', { path: `${st.folder ? `${st.folder}/` : ''}${name.trim()}` }); st.folder = r.path; st.open.add(dir(r.path)); rerender(); } catch (e) { toast(e.message, 'err'); }
   };
@@ -211,7 +211,7 @@ async function preview(box, f, ctx, rerender) {
   const k = KIND(f.mime, f.path);
   box.innerHTML = `<header class="fm-ph"><div><b title="${esc(f.path)}">${esc(base(f.path))}</b><span class="hint">${esc(dir(f.path) || 'Arquivos')} · ${size(f.size)} · ${when(f.mtime)}${f.by ? ` · por ${esc(ctx.nameOf(f.by))}` : ''}</span></div>
       <div class="row"><a class="btn small" href="${url(f.path, true)}">${ic('download', 'sm')}Baixar</a><a class="btn small ghost" href="${url(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${ic('external-link', 'sm')}</a>
-      <button type="button" class="btn small ghost" data-rename title="Renomear ou mover">${ic('pencil', 'sm')}</button>${ctx.isAdmin || f.by === ctx.me ? `<button type="button" class="btn small ghost danger" data-del title="Excluir">${ic('trash-2', 'sm')}</button>` : ''}
+      <button type="button" class="btn small ghost" data-rename title="Renomear ou mover">${ic('pencil', 'sm')}</button>${ctx.isAdmin || f.by === ctx.me ? `<button type="button" class="btn small ghost danger" data-del title="Excluir">${ic('trash', 'sm')}</button>` : ''}
       <button type="button" class="btn small ghost" data-close aria-label="Fechar prévia">${ic('x', 'sm')}</button></div></header>
     <div class="fm-body kind-${k}">${{
       image: `<div class="fm-img"><img src="${url(f.path)}" alt="${esc(base(f.path))}"></div>`,
@@ -222,12 +222,12 @@ async function preview(box, f, ctx, rerender) {
 
   $('[data-close]', box).onclick = () => { st.sel = null; rerender(); };
   $('[data-rename]', box).onclick = async () => {
-    const to = prompt('Novo nome ou caminho (use / para mover para outra pasta):', f.path);
+    const to = await promptDialog({ title: 'Renomear ou mover', message: 'Use / para mover para outra pasta.', label: 'Novo nome ou caminho', value: f.path, confirmLabel: 'Salvar', icon: 'pencil' });
     if (!to?.trim() || to.trim() === f.path) return;
     try { const r = await api('POST', '/api/files/move', { from: f.path, to: to.trim() }); st.sel = r.path; st.folder = dir(r.path); toast('Arquivo atualizado'); rerender(); } catch (e) { toast(e.message, 'err'); }
   };
   $('[data-del]', box)?.addEventListener('click', async () => {
-    if (!confirm(`Excluir “${base(f.path)}”? Ele sai da lista${'' } e do Google Drive (fica guardado na lixeira do servidor).`)) return;
+    if (!(await confirmDialog({ title: `Excluir “${base(f.path)}”?`, message: 'Ele sai da lista e do Google Drive. Uma cópia fica guardada na lixeira do servidor.', confirmLabel: 'Excluir', danger: true }))) return;
     try { await api('DELETE', `/api/files?path=${encodeURIComponent(f.path)}`); st.sel = null; toast('Arquivo excluído'); rerender(); } catch (e) { toast(e.message, 'err'); }
   });
 

@@ -1,5 +1,5 @@
 import { Office } from './office.js';
-import { $, $$, esc, api, toast, toastUndo, ic, initials } from './common.js';
+import { $, $$, esc, api, toast, toastUndo, ic, initials, confirmDialog } from './common.js';
 import { renderIntegrations, accessChips, INTEGRATION_NAMES } from './integrations-ui.js';
 import { renderProfile, renderKnowledge, renderCompanyMemory, renderApprovals, resetProfileDraft } from './agent-profile.js';
 import { renderFilesPanel, focusFile } from './files-ui.js';
@@ -431,7 +431,7 @@ function taskCard(t, extra = '', { live = false } = {}) {
 
 // Bloco "oficina" no cartão: plano, últimos passos, PR, custo e ações.
 const JOB_STATUS = { starting: 'Começando', running: 'Na oficina', finishing: 'Fechando a entrega', done: 'Entregue', failed: 'Parou', cancelled: 'Cancelado', queued: 'Na fila' };
-const STEP_ICON = { tool: 'terminal', text: 'message-square', tests: 'flask-conical', error: 'triangle-alert' };
+const STEP_ICON = { tool: 'terminal', text: 'message-square', tests: 'flask-conical', error: 'triangle-exclamation-point' };
 function jobBlock(j, t) {
   const live = ['starting', 'running', 'finishing'].includes(j.status);
   const plan = j.plan || [];
@@ -459,7 +459,7 @@ function bindReview(root) {
   $$('[data-approve]', root).forEach((b) => b.onclick = async () => {
     const t = S.tasks.find((x) => x.id === b.dataset.approve);
     const job = (S.jobs || []).filter((j) => j.taskId === t?.id).at(-1);
-    if (job?.pr && job.pr.state !== 'merged' && !confirm(`O PR #${job.pr.number} ainda não foi mergeado no GitHub. Concluir a tarefa mesmo assim?`)) return;
+    if (job?.pr && job.pr.state !== 'merged' && !(await confirmDialog({ title: 'Concluir sem o merge?', message: `O PR #${job.pr.number} ainda não foi mergeado no GitHub. Concluir a tarefa mesmo assim?`, confirmLabel: 'Concluir mesmo assim', icon: 'git-pull-request' }))) return;
     try { await api('POST', `/api/tasks/${b.dataset.approve}/update`, { status: 'done' }); toast('Tarefa concluída'); } catch (e) { toast(e.message, 'err'); }
   });
 }
@@ -559,7 +559,7 @@ function renderTasks() {
 }
 function bindJobActions(panel) {
   $$('[data-cancel-job]', panel).forEach((b) => b.onclick = async () => {
-    if (!confirm('Cancelar este trabalho? O que já foi feito no ambiente é descartado.')) return;
+    if (!(await confirmDialog({ title: 'Cancelar este trabalho?', message: 'O que já foi feito no ambiente de trabalho é descartado.', confirmLabel: 'Cancelar trabalho', cancelLabel: 'Continuar', danger: true }))) return;
     try { await api('POST', `/api/jobs/${b.dataset.cancelJob}/cancel`); toast('Cancelando…'); } catch (e) { toast(e.message, 'err'); }
   });
   $$('[data-retry]', panel).forEach((b) => b.onclick = async () => {
@@ -1186,7 +1186,7 @@ function renderTeam() {
     } catch (err) { toast(err.message, 'err'); }
   };
   $('#fireAgent')?.addEventListener('click', async () => {
-    if (!confirm(`Remover ${a.name} da empresa?`)) return;
+    if (!(await confirmDialog({ title: `Remover ${a.name} da empresa?`, message: 'Ele sai da equipe e para de receber tarefas e mensagens.', confirmLabel: 'Remover', danger: true }))) return;
     try { await api('DELETE', '/api/agents/' + a.id); teamSel = null; toast(`${a.name} saiu da empresa`); } catch (err) { toast(err.message, 'err'); }
   });
 }
@@ -1232,7 +1232,7 @@ function renderSettings() {
     } catch (err) { toast(err.message, 'err'); }
   });
   $('#resetWork')?.addEventListener('click', async () => {
-    if (!confirm('Apagar todas as tarefas, conversas e arquivos? Isso não pode ser desfeito.')) return;
+    if (!(await confirmDialog({ title: 'Apagar todo o trabalho?', message: 'Todas as tarefas, conversas e arquivos serão apagados. Isso não pode ser desfeito.', confirmLabel: 'Apagar tudo', danger: true }))) return;
     await api('POST', '/api/control', { action: 'reset' });
     toast('Trabalho apagado');
   });
@@ -1282,7 +1282,7 @@ async function renderMcpAccess(created) {
     } catch (err) { toast(err.message, 'err'); }
   });
   root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Revogar este token? A ferramenta que usa ele perde o acesso na hora.')) return;
+    if (!(await confirmDialog({ title: 'Revogar este token?', message: 'A ferramenta que usa este token perde o acesso na hora.', confirmLabel: 'Revogar', danger: true }))) return;
     try { await api('DELETE', `/api/tokens/${b.dataset.revoke}`); toast('Token revogado'); renderMcpAccess(); } catch (err) { toast(err.message, 'err'); }
   }));
 }

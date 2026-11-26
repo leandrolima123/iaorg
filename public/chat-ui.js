@@ -11,7 +11,7 @@ const ago = (ts) => {
   if (new Date(ts).toDateString() === new Date().toDateString()) return hhmm(ts);
   return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 };
-const CAIXA = { 'caixa:crisp': ['Chat do site', 'message-circle'], 'caixa:resend': ['E-mail (Resend)', 'mail'], 'caixa:gmail': ['Gmail', 'inbox'], 'caixa:whatsapp': ['WhatsApp', 'phone'] };
+const CAIXA = { 'caixa:crisp': ['Chat do site', 'message-circle'], 'caixa:resend': ['E-mail (Resend)', 'mail'], 'caixa:gmail': ['Gmail', 'inbox'], 'caixa:whatsapp': ['WhatsApp', 'phone'], 'caixa:whatsapp_web': ['WhatsApp pessoal', 'smartphone'] };
 
 // ---------------- conversas ----------------
 const cs = { filter: 'todas', q: '', who: '', key: null, threads: [] };
