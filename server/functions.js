@@ -17,13 +17,15 @@ export const FUNCTION_CATALOG = {
     role: 'Vigia', title: 'Vigia da mesa', name: 'Vigia',
     summary: 'Varre os pares da mesa no servidor, sem custo de IA, e só chama o analista quando um par passa em todos os filtros.',
     does: [
-      'Varre todos os pares permitidos (tendência no 1d e 4h, entrada no 1h, stop, ganho/risco)',
+      'Varre todos os pares permitidos (tendência no 1d e 4h, entrada no 1h, stop, ganho/risco, RSI(2) do 1h)',
+      'Na estratégia RSI(2), também faz a saída: vende quando o RSI(2) do 1h passa de 70 ou a posição completa 24 h',
       'Não chama ninguém com a mesa parada, posições no máximo ou perda do dia alta',
       'Chama o analista só quando um par passa nos filtros, uma vez por par a cada período de espera',
     ],
     requires: [{ type: 'binance', label: 'Binance' }],
     look: { char: 'skeleton_rogue', parts: {}, outfit: 'agent', item: '', scale: 0.95 }, // funções: esqueletos, para diferenciar dos agentes
     fields: (store) => [
+      { key: 'strategy', label: 'Estratégia', type: 'select', options: [{ value: 'tendencia', label: 'Tendência (seletiva: só compra com o 4h em alta)' }, { value: 'rsi2', label: 'RSI(2) no 1h (opera muito; o Vigia faz a saída)' }], hint: 'RSI(2): entra quando a vela de 1 h fecha com RSI(2) abaixo de 10, stop a 2 ATR, e o Vigia vende quando o RSI(2) passa de 70 ou após 24 h. No backtest de 1 ano opera cerca de 6 vezes por dia, mas perdeu depois das taxas.' },
       { key: 'intervalMin', label: 'Varrer a cada', type: 'select', options: [{ value: 1, label: '1 min' }, { value: 2, label: '2 min' }, { value: 5, label: '5 min' }, { value: 15, label: '15 min' }, { value: 30, label: '30 min' }, { value: 60, label: '1 h' }], hint: 'Cada varredura usa só dados públicos da Binance: não custa IA.' },
       { key: 'analystId', label: 'Quem chamar', type: 'select', options: [{ value: '', label: 'O primeiro analista com permissão de propor' }, ...agentOptions(store, { integration: 'binance', perm: 'analyze' })], hint: 'Só aparecem agentes com a permissão "Propor operações" na Binance.' },
       { key: 'minRR', label: 'Ganho/risco mínimo para chamar', type: 'number', min: 1, max: 5, step: 0.1, hint: 'Já descontadas as taxas. O analista usa 2 nos procedimentos dele.' },

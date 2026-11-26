@@ -194,6 +194,19 @@ const trendOf = (i) => (i.sma20 == null || i.sma50 == null ? 'sem dados'
   : i.ultimo > i.sma50 && i.sma20 > i.sma50 ? 'alta' : i.ultimo < i.sma50 && i.sma20 < i.sma50 ? 'baixa' : 'lateral');
 const scanCache = new Map(); // env:pares -> { at, rows }
 
+// Estratégia RSI(2) (reversão curta no 1h), escolhida pelo dono depois do backtest de 1 ano em 11 pares:
+// entra quando uma vela de 1 h FECHA com RSI(2) abaixo de 10, stop a 2 ATR do 1h, sem alvo fixo;
+// sai quando uma vela de 1 h fecha com RSI(2) acima de 70 ou depois de 24 h (a saída é feita pelo Vigia).
+export const RSI2 = { entry: 10, exit: 70, stopAtr: 2, maxHours: 24 };
+function rsiOf(closes, n) {
+  if (closes.length <= n) return null;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const x = closes[i] - closes[i - 1]; if (x >= 0) g += x; else l -= x; }
+  g /= n; l /= n;
+  for (let i = n + 1; i < closes.length; i++) { const x = closes[i] - closes[i - 1]; g = (g * (n - 1) + Math.max(x, 0)) / n; l = (l * (n - 1) + Math.max(-x, 0)) / n; }
+  return l === 0 ? 100 : 100 - 100 / (1 + g / l);
+}
+
 async function scanPair(d, par) {
   const [cd, c4, c1, dia] = await Promise.all([bn.klines(d.env, par, '1d', 220), bn.klines(d.env, par, '4h', 220), bn.klines(d.env, par, '1h', 220), bn.ticker24h(d.env, par)]);
   const D = bn.indicators(cd), H4 = bn.indicators(c4), H1 = bn.indicators(c1);
@@ -225,6 +238,12 @@ async function scanPair(d, par) {
   const valorMax = distPct ? Math.min(d.maxOrderUsdt || Infinity, d.maxRiskUsdt ? d.maxRiskUsdt / (distPct / 100) : Infinity) : null;
   const esticado = H4.rsi14 > 72 || (H4.atr14 && H4.sma20 != null && price - H4.sma20 > 2 * H4.atr14);
   const tendenciaOk = ['alta', 'lateral'].includes(t1d) && t4h === 'alta';
+  // RSI(2) só com velas de 1 h fechadas (a última da Binance ainda está em formação)
+  const fechadas = c1.slice(0, -1);
+  const r2 = rsiOf(fechadas.map((x) => x.c), 2);
+  const stopR2 = H1.atr14 ? price - RSI2.stopAtr * H1.atr14 : null;
+  const distR2 = stopR2 ? ((price - stopR2) / price) * 100 : null;
+  const valorR2 = distR2 ? Math.min(d.maxOrderUsdt || Infinity, d.maxRiskUsdt ? d.maxRiskUsdt / (distR2 / 100) : Infinity) : null;
   return {
     par, ultimo: price, variacao_24h_pct: dia.variacao_pct, volume_24h_usdt: Math.round(dia.volume_usdt),
     d1: { tendencia: t1d, calculada_no: fundo, sma20: D.sma20, sma50: D.sma50, sma200: D.sma200, rsi14: D.rsi14, atr_pct: D.atr_pct },
@@ -237,6 +256,13 @@ async function scanPair(d, par) {
     },
     filtros: { dados_ok: dadosOk, tendencia_ok: tendenciaOk, nao_esticado: !esticado, ganho_risco_ok: gr != null && gr >= 2 },
     passou_em_todos: dadosOk && tendenciaOk && !esticado && gr != null && gr >= 2,
+    rsi2: {
+      rsi2_1h_fechada: sig(r2, 3), vela_fechada: fechadas.length ? new Date(fechadas.at(-1).t).toISOString() : null,
+      entrada: dadosOk && r2 != null && r2 < RSI2.entry, saida: r2 != null && r2 > RSI2.exit,
+      stop: sig(stopR2), distancia_do_stop_pct: sig(distR2, 3),
+      valor_usdt: valorR2 && Number.isFinite(valorR2) ? +valorR2.toFixed(2) : null,
+      risco_usdt: valorR2 && Number.isFinite(valorR2) ? +(valorR2 * distR2 / 100).toFixed(2) : null,
+    },
     avisos,
   };
 }
@@ -270,8 +296,9 @@ async function scan(store, d, key) {
     ambiente: d.env === 'prod' ? 'PRODUÇÃO (dinheiro real)' : 'TESTNET (dinheiro de teste; os preços da testnet não são os do mercado real)',
     horario_dados: new Date(c.at).toISOString(), mesa_parada: d.halted, conta,
     btc_1d: btc?.d1?.tendencia || null,
-    como_ler: `tendencia = posição do preço e da SMA20 em relação à SMA50. ganho_risco_ate_resistencia usa o stop pelo suporte e a máxima de 20 velas do 4h, já descontando ${TAXAS_PCT}% de taxas. filtros são o mínimo para propor, não uma recomendação: a decisão e a tese são suas.`,
+    como_ler: `tendencia = posição do preço e da SMA20 em relação à SMA50. ganho_risco_ate_resistencia usa o stop pelo suporte e a máxima de 20 velas do 4h, já descontando ${TAXAS_PCT}% de taxas. filtros são o mínimo para propor, não uma recomendação: a decisão e a tese são suas. rsi2 = estratégia de reversão curta: entrada quando a última vela de 1 h fechada tem RSI(2) < ${RSI2.entry}, stop a ${RSI2.stopAtr} ATR do 1h, sem alvo; saída (feita pelo Vigia) quando o RSI(2) fecha acima de ${RSI2.exit} ou após ${RSI2.maxHours} h.`,
     candidatos: rows.filter((r) => r.passou_em_todos && !r.situacao).map((r) => r.par),
+    candidatos_rsi2: rows.filter((r) => r.rsi2?.entrada && !r.situacao).map((r) => r.par),
     pares: rows,
   };
 }
@@ -280,11 +307,12 @@ async function scan(store, d, key) {
 // O servidor faz a varredura (dados públicos da Binance, sem custo de modelo) e só acorda o analista
 // quando um par passa em todos os filtros. Quem roda é um membro do tipo função (server/functions.js);
 // a configuração fica na ficha dele (member.fn.config) e o estado em state.fnState[member.id].
-export const WATCH_DEFAULTS = { intervalMin: 15, cooldownH: 4, minRR: 2, maxLossPct: 70, analystId: '' };
+export const WATCH_DEFAULTS = { strategy: 'tendencia', intervalMin: 15, cooldownH: 4, minRR: 2, maxLossPct: 70, analystId: '' };
 export function watchConfig(cfg = {}) {
   const n = (v, lo, hi, def) => { const x = Number(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : def; };
   const D = WATCH_DEFAULTS;
   return {
+    strategy: cfg.strategy === 'rsi2' ? 'rsi2' : 'tendencia',
     intervalMin: [1, 2, 5, 15, 30, 60].includes(+cfg.intervalMin) ? +cfg.intervalMin : D.intervalMin,
     cooldownH: Math.round(n(cfg.cooldownH, 1, 24, D.cooldownH)),
     minRR: +n(cfg.minRR, 1, 5, D.minRR).toFixed(1),
@@ -310,7 +338,7 @@ export async function watchDesk(rt, ctx, member, { force = false } = {}) {
     logActivity(store, member.id, {
       type: 'run', name: force ? 'varredura (rodada manualmente)' : 'varredura', ok: !/^erro|não conectada|incomplet|^conta:/.test(result),
       text: `${result.charAt(0).toUpperCase()}${result.slice(1)}${extra.pares ? ` · ${extra.pares.length} pares` : ''}`,
-      ...(extra.pares?.length ? { detail: extra.pares.map((p) => `${p.par}: ganho/risco ${p.gr ?? '—'} · dados ${yes(p.ok.dados_ok)} · tendência ${yes(p.ok.tendencia_ok)} · não esticado ${yes(p.ok.nao_esticado)}${p.situacao ? ` · ${p.situacao}` : ''}`).join('\n') } : {}),
+      ...(extra.pares?.length ? { detail: extra.pares.map((p) => `${p.par}: RSI(2) 1h ${p.rsi2 ?? '—'} · ganho/risco ${p.gr ?? '—'} · dados ${yes(p.ok.dados_ok)} · tendência ${yes(p.ok.tendencia_ok)} · não esticado ${yes(p.ok.nao_esticado)}${p.situacao ? ` · ${p.situacao}` : ''}`).join('\n') } : {}),
     });
     rt.setStatus(member.id, { status: 'idle', bubble: result.slice(0, 120) });
     setTimeout(() => { if (!watching.has(member.id)) rt.setStatus(member.id, { status: 'idle', bubble: '' }); }, 90_000);
@@ -328,14 +356,51 @@ export async function watchDesk(rt, ctx, member, { force = false } = {}) {
   watching.add(member.id);
   rt.setStatus(member.id, { status: 'working', bubble: `Varrendo ${d.pairs.length} pares` });
   try {
-    const r = await scan(store, d, bn.parseKey(ctx.secretOf(store, 'binance')));
+    const key = bn.parseKey(ctx.secretOf(store, 'binance'));
+    const r = await scan(store, d, key);
     w.runs++;
     const k = r.conta || {};
-    const pares = r.pares.map((p) => ({ par: p.par, gr: p.niveis?.ganho_risco_ate_resistencia ?? null, ok: p.filtros || {}, situacao: p.situacao || null }));
+    const pares = r.pares.map((p) => ({ par: p.par, gr: p.niveis?.ganho_risco_ate_resistencia ?? null, rsi2: p.rsi2?.rsi2_1h_fechada ?? null, ok: p.filtros || {}, situacao: p.situacao || null }));
     if (k.erro) return done(`conta: ${k.erro}`, { pares });
-    if (d.maxPositions && (k.posicoes_abertas || []).length >= d.maxPositions) return done('posições no máximo', { pares });
-    if (d.maxDailyLossUsdt && -k.resultado_do_dia_usdt >= (cfg.maxLossPct / 100) * d.maxDailyLossUsdt) return done(`perda do dia acima de ${cfg.maxLossPct}% do limite`, { pares });
+    const rsi2 = cfg.strategy === 'rsi2';
+    // RSI(2): a saída é do Vigia (sem alvo na Binance; o stop fica lá). Fecha quando o RSI(2) da vela de 1 h
+    // fechada passa de 70 ou quando a posição completa 24 h. Vender só reduz risco.
+    const saidas = [];
+    if (rsi2) {
+      for (const p of r.pares.filter((x) => x.situacao === 'posição aberta')) {
+        const buy = trades(store).filter((t) => t.env === d.env && t.par === p.par && t.lado === 'COMPRA').at(-1);
+        const horas = buy ? (Date.now() - buy.ts) / 3600_000 : null;
+        const motivo = p.rsi2?.saida ? `RSI(2) do 1h fechou em ${p.rsi2.rsi2_1h_fechada} (acima de ${RSI2.exit})`
+          : horas != null && horas >= RSI2.maxHours ? `posição com ${horas.toFixed(1)} h (limite de ${RSI2.maxHours} h da estratégia RSI(2))` : null;
+        if (!motivo) continue;
+        try {
+          const x = await closePosition(rt, d, key, p.par, `saída da estratégia RSI(2): ${motivo}`, member.id);
+          saidas.push(`${p.par}${x.trade ? ` (${usd(x.trade.valorUsdt)})` : ''}`);
+        } catch (e) { saidas.push(`${p.par} falhou: ${e.message}`); }
+      }
+      if (saidas.length) scanCache.clear(); // a conta mudou
+    }
+    const prefix = saidas.length ? `saiu de ${saidas.join(', ')}; ` : '';
+    const abertas = (k.posicoes_abertas || []).length - saidas.filter((s) => !/falhou/.test(s)).length;
+    if (d.maxPositions && abertas >= d.maxPositions) return done(`${prefix}posições no máximo`, { pares });
+    if (d.maxDailyLossUsdt && -k.resultado_do_dia_usdt >= (cfg.maxLossPct / 100) * d.maxDailyLossUsdt) return done(`${prefix}perda do dia acima de ${cfg.maxLossPct}% do limite`, { pares });
+    if (rsi2) {
+      const andamento = r.pares.filter((p) => p.situacao === 'proposta em andamento').length;
+      const vagas = Math.max(0, (d.maxPositions || 1) - abertas - andamento);
+      const pass = r.pares.filter((p) => !p.erro && p.rsi2?.entrada && !p.situacao && p.rsi2.valor_usdt > 0)
+        .sort((a, b) => a.rsi2.distancia_do_stop_pct - b.rsi2.distancia_do_stop_pct); // stop mais curto primeiro (como no backtest)
+      const fresh = pass.filter((p) => !(Date.now() - (w.alerts[p.par] || 0) < cfg.cooldownH * 3600_000)).slice(0, vagas);
+      if (!fresh.length) return done(`${prefix}${pass.length ? `sinais RSI(2) em espera: ${pass.map((p) => p.par).join(', ')}${vagas ? '' : ' (sem vaga)'}` : 'nenhum sinal RSI(2)'}`, { pares });
+      for (const p of fresh) w.alerts[p.par] = Date.now();
+      w.sent++;
+      const lista = fresh.map((p) => `${p.par}: RSI(2) ${p.rsi2.rsi2_1h_fechada} na vela de 1 h de ${p.rsi2.vela_fechada}, preço ${p.ultimo}, valor ${p.rsi2.valor_usdt} USDT, stop ${p.rsi2.stop} (${p.rsi2.distancia_do_stop_pct}%, risco ${p.rsi2.risco_usdt} USDT), sem alvo`).join('\n');
+      rt.postMessage(member.id, who.id, `[${member.name} · vigia da mesa · estratégia RSI(2)] Sinal de entrada (${r.horario_dados}):\n${lista}\nProponha cada um com mesa_propor exatamente com esses valor e stop, SEM alvo, validade 20 min, seguindo o procedimento "Estratégia RSI(2)". A saída é feita pelo Vigia (RSI(2) acima de ${RSI2.exit} ou ${RSI2.maxHours} h).`);
+      rt.logEvent('task', member.id, `${member.name} (vigia da mesa): sinal RSI(2) em ${fresh.map((p) => p.par).join(', ')}; ${who.name} foi chamado para propor.`);
+      return done(`${prefix}chamou ${who.name}: ${fresh.map((p) => p.par).join(', ')}`, { pares, called: who.id });
+    }
     // filtros com o ganho/risco mínimo desta função; fora: par com posição/proposta, avisado há pouco ou recusado nas últimas 24 h
+    // (BTC em baixa no 1d: o analista não propõe nada, então o Vigia também não o acorda)
+    if (r.btc_1d === 'baixa') return done('BTC em baixa no 1d: nenhuma entrada pela estratégia de tendência', { pares });
     const pass = r.pares.filter((p) => !p.erro && p.filtros.dados_ok && p.filtros.tendencia_ok && p.filtros.nao_esticado && p.niveis.ganho_risco_ate_resistencia >= cfg.minRR && !p.situacao);
     const fresh = pass.filter((p) => !(Date.now() - (w.alerts[p.par] || 0) < cfg.cooldownH * 3600_000) && !p.recusada_nas_ultimas_24h?.length);
     if (!fresh.length) return done(pass.length ? `candidatos em espera: ${pass.map((p) => p.par).join(', ')}` : 'nenhum par passou nos filtros', { pares });
@@ -372,7 +437,7 @@ export async function riskContext(d, par, p, chk) {
     risco_usdt: +chk.risk.toFixed(2), risco_pct_patrimonio: s?.equity ? sig((chk.risk / s.equity) * 100, 3) : null,
     spread_pct: bid && ask ? sig(((ask - bid) / ask) * 100, 3) : null,
     tendencia_fundo: row.d1.tendencia, tendencia_4h: row.h4.tendencia, btc_fundo: btc ? btc.d1.tendencia : row.d1.tendencia,
-    filtros_da_varredura: row.filtros, avisos_de_dados: row.avisos,
+    filtros_da_varredura: row.filtros, setup_rsi2: row.rsi2, avisos_de_dados: row.avisos,
     perda_do_dia_usdt: loss == null ? null : +loss.toFixed(2), perda_max_dia_usdt: d.maxDailyLossUsdt,
     uso_da_perda_do_dia_pct: loss != null && d.maxDailyLossUsdt ? Math.round((loss / d.maxDailyLossUsdt) * 100) : null,
     posicoes_abertas: s ? s.positions.map((x) => x.par) : null, max_posicoes: d.maxPositions,
@@ -386,6 +451,7 @@ const riskLine = (r) => (!r || r.erro ? `não calculados (${r?.erro || 'sem dado
   `ganho/risco com taxas ${r.ganho_risco_com_taxas ?? 'sem alvo'}`,
   `spread ${r.spread_pct ?? '?'}%`,
   `tendência de fundo ${r.tendencia_fundo}, 4h ${r.tendencia_4h}, BTC de fundo ${r.btc_fundo}`,
+  r.setup_rsi2 ? `RSI(2) da vela de 1 h fechada ${r.setup_rsi2.rsi2_1h_fechada} (sinal de entrada RSI(2): ${r.setup_rsi2.entrada ? 'sim' : 'não'}; stop da estratégia ${r.setup_rsi2.stop})` : null,
   `perda do dia ${r.perda_do_dia_usdt ?? '?'} de ${r.perda_max_dia_usdt} USDT (${r.uso_da_perda_do_dia_pct ?? '?'}% do limite)`,
   `posições abertas: ${(r.posicoes_abertas || []).join(', ') || 'nenhuma'} (máx. ${r.max_posicoes})`,
   `mínimo da Binance ${r.minimo_binance_usdt ?? '?'} USDT`,
@@ -604,30 +670,38 @@ export async function executeDeskTool(rt, agent, name, input, opts, ctx) {
       const motivo = String(input.motivo || '').trim();
       if (!motivo) return { error: 'Informe o motivo.' };
       say(`Zerando ${par}`);
-      const info = await bn.symbolInfo(d.env, par);
-      // cancela stop/alvo do par antes de vender (senão o saldo fica preso nas ordens)
-      const orders = await bn.openOrders(d.env, key, par);
-      const lists = new Set();
-      for (const o of orders) {
-        if (o.orderListId > -1) { if (!lists.has(o.orderListId)) { lists.add(o.orderListId); await bn.cancelOrderList(d.env, key, par, o.orderListId).catch(() => {}); } }
-        else await bn.cancelOrder(d.env, key, par, o.orderId).catch(() => {});
-      }
-      const acc = await bn.account(d.env, key);
-      // só o que a mesa comprou: o saldo que já estava na conta antes não é vendido
-      const free = Math.max(0, (acc.balances.find((b) => b.asset === info.base)?.free || 0) - (deskBaseline(store, d.env)[info.base] || 0));
-      const qty = bn.floorTo(free, info.stepSize);
-      const px = await bn.price(d.env, par);
-      if (!(+qty > 0) || +qty * px < (info.minNotional || 0)) return { ok: true, aviso: `Nada a vender em ${par} (saldo ${free} ${info.base}${orders.length ? `; ${orders.length} ordem(ns) cancelada(s)` : ''}).` };
-      const s = await bn.marketSell(d.env, key, par, qty);
-      const got = +s.cummulativeQuoteQty;
-      const trade = { id: uid('tr'), ts: Date.now(), env: d.env, executedBy: agent.id, par, lado: 'VENDA', quantidade: +qty, precoMedio: +(got / +s.executedQty).toFixed(8), valorUsdt: +got.toFixed(2), orderId: s.orderId, motivo };
-      trades(store).push(trade); store.save();
-      rt.logEvent('task', agent.id, `${agent.name} zerou ${par}: vendeu ${qty} ${info.base} por ${usd(got)}. Motivo: ${motivo}`);
-      notifyHumans(rt, `Mesa: ${agent.name} zerou ${par} (${usd(got)})`);
-      return { ok: true, trade, ordens_canceladas: orders.length };
+      return closePosition(rt, d, key, par, motivo, agent.id);
     }
   }
   return undefined;
+}
+
+// Zera a posição da mesa num par: cancela stop/alvo e vende a mercado só o que a mesa comprou.
+// Usado pelo mesa_fechar (executor) e pela saída automática da estratégia RSI(2) (Vigia).
+async function closePosition(rt, d, key, par, motivo, byId) {
+  const store = rt.store;
+  const by = rt.nameOf(byId);
+  const info = await bn.symbolInfo(d.env, par);
+  // cancela stop/alvo do par antes de vender (senão o saldo fica preso nas ordens)
+  const orders = await bn.openOrders(d.env, key, par);
+  const lists = new Set();
+  for (const o of orders) {
+    if (o.orderListId > -1) { if (!lists.has(o.orderListId)) { lists.add(o.orderListId); await bn.cancelOrderList(d.env, key, par, o.orderListId).catch(() => {}); } }
+    else await bn.cancelOrder(d.env, key, par, o.orderId).catch(() => {});
+  }
+  const acc = await bn.account(d.env, key);
+  // só o que a mesa comprou: o saldo que já estava na conta antes não é vendido
+  const free = Math.max(0, (acc.balances.find((b) => b.asset === info.base)?.free || 0) - (deskBaseline(store, d.env)[info.base] || 0));
+  const qty = bn.floorTo(free, info.stepSize);
+  const px = await bn.price(d.env, par);
+  if (!(+qty > 0) || +qty * px < (info.minNotional || 0)) return { ok: true, aviso: `Nada a vender em ${par} (saldo ${free} ${info.base}${orders.length ? `; ${orders.length} ordem(ns) cancelada(s)` : ''}).` };
+  const s = await bn.marketSell(d.env, key, par, qty);
+  const got = +s.cummulativeQuoteQty;
+  const trade = { id: uid('tr'), ts: Date.now(), env: d.env, executedBy: byId, par, lado: 'VENDA', quantidade: +qty, precoMedio: +(got / +s.executedQty).toFixed(8), valorUsdt: +got.toFixed(2), orderId: s.orderId, motivo };
+  trades(store).push(trade); store.save();
+  rt.logEvent('task', byId, `${by} zerou ${par}: vendeu ${qty} ${info.base} por ${usd(got)}. Motivo: ${motivo}`);
+  notifyHumans(rt, `Mesa: ${by} zerou ${par} (${usd(got)})`);
+  return { ok: true, trade, ordens_canceladas: orders.length };
 }
 
 const publicProposal = (rt) => (p) => ({
