@@ -91,6 +91,9 @@ export const isLightTool = (name) => LIGHT_TOOLS.has(name) || /^(email|gmail|cha
 const CHAT_HEAVY_LIMIT = +process.env.CHAT_HEAVY_LIMIT || 3;
 // Resultado de ferramenta muito longo é reenviado a cada passo do ciclo: corta e avisa.
 const TOOL_RESULT_MAX = +process.env.TOOL_RESULT_MAX_CHARS || 8000;
+// Ferramentas que precisam do resultado inteiro para decidir (a varredura da mesa traz todos os pares;
+// cortada, o analista perde pares e não propõe): limite maior.
+const TOOL_RESULT_MAX_BY_TOOL = { mesa_varredura: 40000, mesa_resultado: 20000, mesa_conta: 16000 };
 export const clipToolResult = (s, max = TOOL_RESULT_MAX) => (s.length <= max ? s : `${s.slice(0, max)}… [resultado cortado: ${s.length.toLocaleString('pt-BR')} caracteres no total. Se precisar do resto, refine a consulta (filtros, limite menor).]`);
 
 const BASE_TOOLS = [
@@ -932,7 +935,7 @@ ${org}
           if (!['send_message'].includes(tool.name)) {
             logActivity(this.store, agent.id, { type: 'tool', name: tool.name, ok: !out?.error, text: summarizeInput(tool.input), detail: out?.error || out });
           }
-          results.push({ type: 'tool_result', tool_use_id: tool.id, content: clipToolResult(JSON.stringify(out) ?? '{}'), is_error: !!out?.error });
+          results.push({ type: 'tool_result', tool_use_id: tool.id, content: clipToolResult(JSON.stringify(out) ?? '{}', TOOL_RESULT_MAX_BY_TOOL[tool.name] || TOOL_RESULT_MAX), is_error: !!out?.error });
           await new Promise((rs) => setTimeout(rs, provider === 'mock' ? 900 : 300));
         }
         messages.push({ role: 'user', content: results });
